@@ -1,0 +1,39 @@
+# ============================================================================
+# Agentes de Scouting - secretos y parámetros del ambiente
+#
+# 1. Copiar este archivo como config/scouting.yml (mismo directorio).
+# 2. Completar los valores. config/scouting.yml está en .gitignore: NUNCA se sube al repositorio.
+# 3. En servidores: dejarlo junto al JAR en config/scouting.yml, o indicar la ruta con la
+#    variable de entorno SCOUTING_CONFIG. Permisos de lectura solo para la cuenta del servicio.
+# ============================================================================
+
+scouting:
+
+  # --- Base de datos SQL Server ---------------------------------------------
+  db:
+    # PC local con Docker (ver README). En UCU: jdbc:sqlserver://<servidor>:1433;databaseName=Scouting;encrypt=true
+    url: jdbc:sqlserver://localhost:1433;databaseName=ScoutingTest;encrypt=true;trustServerCertificate=true
+    usuario: sa                       # En UCU: scouting_app
+    clave: "Scouting.Local.2026"      # SECRETO
+    migrar: true                      # true = Flyway crea/actualiza el esquema al arrancar. En UCU: false (lo hace TI)
+
+  # --- Entra ID (registro de aplicación "Scouting Backoffice") ---------------
+  entra:
+    tenant-id: "00000000-0000-0000-0000-000000000000"   # Id. de directorio (inquilino) de UCU
+    client-id: "00000000-0000-0000-0000-000000000000"   # Id. de aplicación (cliente)
+    client-secret: "pegar-aqui-el-valor-del-secreto"     # SECRETO - el "Valor", no el "Id. de secreto"
+
+  # --- Acceso ------------------------------------------------------------------
+  # Correos institucionales con rol administrador aunque no estén en un grupo admin (para el arranque).
+  admins-iniciales: tu.usuario@ucu.edu.uy
+
+  # --- Parámetros generales -----------------------------------------------------
+  zona-horaria: America/Montevideo
+  minutos-planificador: 5             # Cada cuánto corre el flujo planificador (solo para los mensajes)
+
+  # --- Logs ----------------------------------------------------------------------
+  log:
+    archivo: logs/scouting.log
+
+# Los topes (participantes, exploraciones activas), dominios permitidos, reintentos y correo de
+# alertas NO van acá: se administran desde la pantalla Configuración de la app (tabla scouting.configuracion).

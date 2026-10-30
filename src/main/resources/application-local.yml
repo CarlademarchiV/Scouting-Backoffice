@@ -1,9 +1,6 @@
-# Perfil para desarrollo en la PC: SQL Server en Docker (ver README) y Flyway activo.
+# Perfil para desarrollo en la PC: Flyway crea el esquema y la cookie de sesión funciona sin HTTPS.
+# La conexión a la base y los datos de Entra van en config/scouting.yml.
 spring:
-  datasource:
-    url: jdbc:sqlserver://localhost:1433;databaseName=ScoutingTest;encrypt=true;trustServerCertificate=true
-    username: sa
-    password: ${SCOUTING_DB_PASSWORD:Scouting.Local.2026}
   flyway:
     enabled: true
 

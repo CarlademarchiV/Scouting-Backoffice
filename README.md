@@ -36,33 +36,57 @@ power-automate/ Definiciones de referencia de los flujos
 - SQL Server 2019 o superior (usa `AT TIME ZONE` y `STRING_AGG`).
 - Docker, solo para las pruebas de integración y el desarrollo local.
 
-## Desarrollo local
+## Configuración (secretos y parámetros)
 
-1. Levantar SQL Server y crear la base:
+Todo lo que cambia por ambiente o es secreto va en un archivo **fuera del repositorio**:
 
-   ```bash
-   docker run -d --name scouting-sql -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='Scouting.Local.2026' \
-     -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
-   docker exec scouting-sql /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa \
-     -P 'Scouting.Local.2026' -Q "CREATE DATABASE ScoutingTest"
+1. Copiar `config/scouting.example.yml` como `config/scouting.yml`.
+2. Completar la base de datos, los datos de Entra ID y los administradores iniciales.
+3. `config/scouting.yml` está en `.gitignore`: no se sube nunca. En servidores se deja junto al JAR en `config/scouting.yml` o se indica la ruta con la variable `SCOUTING_CONFIG`.
+
+Las variables de entorno (`SCOUTING_DB_URL`, `ENTRA_CLIENT_SECRET`, etc.) siguen funcionando como alternativa. Los topes, dominios permitidos, reintentos y correo de alertas se administran desde la pantalla **Configuración** de la app.
+
+## Desarrollo local (Windows)
+
+Requisitos: **Java 21** (por ejemplo Eclipse Temurin), **Maven 3.9**, **Docker Desktop** y **Git**.
+
+1. Clonar el repositorio:
+
+   ```powershell
+   git clone https://github.com/CarlademarchiV/Scouting-Backoffice.git
+   cd Scouting-Backoffice
    ```
 
-2. Registrar una app de prueba en Entra con redirect URI `http://localhost:8080/login/oauth2/code/entra` y exportar:
+2. Levantar SQL Server en Docker y crear la base:
 
-   ```bash
-   export ENTRA_TENANT_ID=<tenant UCU>
-   export ENTRA_CLIENT_ID=<client id>
-   export ENTRA_CLIENT_SECRET=<secret>
-   export SCOUTING_ADMINS_INICIALES=tu.usuario@ucu.edu.uy
+   ```powershell
+   docker run -d --name scouting-sql -e ACCEPT_EULA=Y -e "MSSQL_SA_PASSWORD=Scouting.Local.2026" -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
+   # esperar ~20 segundos a que arranque
+   docker exec scouting-sql /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "Scouting.Local.2026" -Q "CREATE DATABASE ScoutingTest"
    ```
 
-3. Ejecutar con el perfil `local` (Flyway crea el esquema):
+3. Registro de aplicación en Entra ID (portal de Entra → Registros de aplicaciones → Nuevo registro):
+   - Nombre: `Scouting Backoffice (local)`; cuentas solo de este directorio.
+   - URI de redirección, plataforma **Web**: `http://localhost:8080/login/oauth2/code/entra`.
+   - En **Certificados y secretos** crear un secreto de cliente y copiar su **Valor**.
+   - Anotar el **Id. de aplicación (cliente)** y el **Id. de directorio (inquilino)**.
 
-   ```bash
-   mvn spring-boot:run -Dspring-boot.run.profiles=local
+4. Crear el archivo de configuración y completarlo:
+
+   ```powershell
+   Copy-Item config\scouting.example.yml config\scouting.yml
+   notepad config\scouting.yml
    ```
 
-4. Entrar a http://localhost:8080. Como administrador inicial, sumate a un grupo en **Grupos** y volvé a iniciar sesión.
+5. Arrancar con el perfil `local` (Flyway crea el esquema la primera vez):
+
+   ```powershell
+   mvn spring-boot:run "-Dspring-boot.run.profiles=local"
+   ```
+
+6. Entrar a http://localhost:8080 con la cuenta UCU. Si tu correo está en `admins-iniciales`, entrás como administrador; para habilitar a otras personas, sumalas a "Usuarios Scouting" en **Grupos** (rige desde su próximo ingreso).
+
+Para apagar la base: `docker stop scouting-sql` (y `docker start scouting-sql` para volver a usarla).
 
 ## Pruebas
 
@@ -89,15 +113,7 @@ Las pruebas de integración levantan SQL Server con Testcontainers (requiere Doc
 
    (Arranca, aplica las migraciones pendientes y termina. Alternativa: Flyway CLI sobre `src/main/resources/db/migration`.)
 
-3. **App**: ejecutar el JAR como servicio con estas variables:
-
-   | Variable | Ejemplo |
-   | --- | --- |
-   | `SCOUTING_DB_URL` | `jdbc:sqlserver://sqlucu:1433;databaseName=Scouting;encrypt=true` |
-   | `SCOUTING_DB_USER` / `SCOUTING_DB_PASSWORD` | `scouting_app` / secreto |
-   | `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET` | App registration "Scouting Backoffice" |
-   | `SCOUTING_ADMINS_INICIALES` | UPNs separados por coma |
-   | `SCOUTING_LOG_FILE` | `/var/log/scouting/scouting.log` |
+3. **App**: ejecutar el JAR como servicio con su `config/scouting.yml` al lado (o `SCOUTING_CONFIG=<ruta>`), con `db.usuario: scouting_app`, `db.migrar: false`, los datos del registro de Entra de producción y `log.archivo` en la carpeta de logs del servidor.
 
 4. **Proxy**: publicar por HTTPS (por ejemplo `https://scouting.ucu.edu.uy`) reenviando los encabezados `X-Forwarded-*`. La redirect URI de Entra es `https://<host>/login/oauth2/code/entra`.
 5. **Monitoreo**: `GET /actuator/health`.

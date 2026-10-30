@@ -7,3 +7,7 @@ logs/
 .DS_Store
 .env
 application-secretos.yml
+
+# Configuración con secretos (usar config/scouting.example.yml como plantilla)
+config/scouting.yml
+config/*.local.yml

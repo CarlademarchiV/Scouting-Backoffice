@@ -1,14 +1,19 @@
+# Secretos y parámetros del ambiente: archivo externo, fuera del repositorio.
+# Por defecto ./config/scouting.yml (copiar de config/scouting.example.yml);
+# otra ruta con la variable SCOUTING_CONFIG. Las variables de entorno siguen funcionando como alternativa.
 spring:
+  config:
+    import: optional:file:${SCOUTING_CONFIG:./config/scouting.yml}
   application:
     name: scouting-backoffice
   datasource:
-    url: ${SCOUTING_DB_URL:jdbc:sqlserver://localhost:1433;databaseName=ScoutingTest;encrypt=true;trustServerCertificate=true}
-    username: ${SCOUTING_DB_USER:scouting_app}
-    password: ${SCOUTING_DB_PASSWORD:}
+    url: ${scouting.db.url:${SCOUTING_DB_URL:jdbc:sqlserver://localhost:1433;databaseName=ScoutingTest;encrypt=true;trustServerCertificate=true}}
+    username: ${scouting.db.usuario:${SCOUTING_DB_USER:scouting_app}}
+    password: ${scouting.db.clave:${SCOUTING_DB_PASSWORD:}}
   flyway:
     # En servidores de UCU las migraciones las corre TI con un login con permisos de DDL.
     # Para migrar con otro login: SPRING_FLYWAY_USER y SPRING_FLYWAY_PASSWORD.
-    enabled: ${SCOUTING_FLYWAY_ENABLED:false}
+    enabled: ${scouting.db.migrar:${SCOUTING_FLYWAY_ENABLED:false}}
   jpa:
     open-in-view: false
     hibernate:
@@ -24,17 +29,17 @@ spring:
         registration:
           entra:
             client-name: Cuenta UCU
-            client-id: ${ENTRA_CLIENT_ID:configurar}
-            client-secret: ${ENTRA_CLIENT_SECRET:configurar}
+            client-id: ${scouting.entra.client-id:${ENTRA_CLIENT_ID:configurar}}
+            client-secret: ${scouting.entra.client-secret:${ENTRA_CLIENT_SECRET:configurar}}
             authorization-grant-type: authorization_code
             redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
             scope: openid,profile,email
         provider:
           entra:
             # URIs explícitas (sin discovery) para que la app arranque aunque Entra no responda.
-            authorization-uri: https://login.microsoftonline.com/${ENTRA_TENANT_ID:organizations}/oauth2/v2.0/authorize
-            token-uri: https://login.microsoftonline.com/${ENTRA_TENANT_ID:organizations}/oauth2/v2.0/token
-            jwk-set-uri: https://login.microsoftonline.com/${ENTRA_TENANT_ID:organizations}/discovery/v2.0/keys
+            authorization-uri: https://login.microsoftonline.com/${scouting.entra.tenant-id:${ENTRA_TENANT_ID:organizations}}/oauth2/v2.0/authorize
+            token-uri: https://login.microsoftonline.com/${scouting.entra.tenant-id:${ENTRA_TENANT_ID:organizations}}/oauth2/v2.0/token
+            jwk-set-uri: https://login.microsoftonline.com/${scouting.entra.tenant-id:${ENTRA_TENANT_ID:organizations}}/discovery/v2.0/keys
             user-name-attribute: sub
 
 server:
@@ -57,7 +62,7 @@ management:
 
 scouting:
   # Tenant de UCU: si se configura, se rechaza cualquier token de otro tenant.
-  tenant-id: ${ENTRA_TENANT_ID:}
+  tenant-id: ${scouting.entra.tenant-id:${ENTRA_TENANT_ID:}}
   # UPNs separados por coma con rol de administrador aunque no estén en un grupo admin (arranque).
   admins-iniciales: ${SCOUTING_ADMINS_INICIALES:}
   zona-horaria: America/Montevideo
@@ -65,7 +70,7 @@ scouting:
 
 logging:
   file:
-    name: ${SCOUTING_LOG_FILE:logs/scouting.log}
+    name: ${scouting.log.archivo:${SCOUTING_LOG_FILE:logs/scouting.log}}
   logback:
     rollingpolicy:
       max-history: 30
