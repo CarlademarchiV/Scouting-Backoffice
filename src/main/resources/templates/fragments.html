@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head th:fragment="head(titulo)">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title th:text="${titulo} + ' · Scouting UCU'">Scouting UCU</title>
+  <link rel="stylesheet" th:href="@{/webjars/bootstrap/5.3.3/css/bootstrap.min.css}">
+  <link rel="stylesheet" th:href="@{/css/app.css}">
+  <script th:src="@{/webjars/bootstrap/5.3.3/js/bootstrap.bundle.min.js}" defer></script>
+  <script th:src="@{/js/app.js}" defer></script>
+</head>
+<body>
+
+<nav th:fragment="nav" class="navbar navbar-expand-md navbar-dark bg-ucu mb-4">
+  <div class="container">
+    <a class="navbar-brand fw-semibold" th:href="@{/exploraciones}">Agentes de Scouting</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menu"
+            aria-controls="menu" aria-expanded="false" aria-label="Menú">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="menu">
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item" sec:authorize="hasRole('USUARIO')">
+          <a class="nav-link" th:href="@{/exploraciones}">Mis exploraciones</a></li>
+        <li class="nav-item" sec:authorize="hasRole('ADMIN')">
+          <a class="nav-link" th:href="@{/admin/grupos}">Grupos</a></li>
+        <li class="nav-item" sec:authorize="hasRole('ADMIN')">
+          <a class="nav-link" th:href="@{/admin/configuracion}">Configuración</a></li>
+        <li class="nav-item" sec:authorize="hasRole('ADMIN')">
+          <a class="nav-link" th:href="@{/admin/ejecuciones}">Monitor</a></li>
+      </ul>
+      <div class="d-flex align-items-center gap-3" sec:authorize="isAuthenticated()">
+        <span class="navbar-text small" sec:authentication="principal.nombre">Usuario</span>
+        <form th:action="@{/logout}" method="post" class="m-0">
+          <button class="btn btn-sm btn-outline-light" type="submit">Salir</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<div th:fragment="mensajes">
+  <div th:if="${ok}" class="alert alert-success" role="status" th:text="${ok}"></div>
+  <div th:if="${error}" class="alert alert-danger" role="alert" th:text="${error}"></div>
+  <div th:if="${errores}" class="alert alert-warning" role="alert">
+    <p class="mb-1 fw-semibold">Algunos correos no se agregaron:</p>
+    <ul class="mb-0"><li th:each="e : ${errores}" th:text="${e}"></li></ul>
+  </div>
+</div>
+
+<span th:fragment="estado(x)" class="badge" th:classappend="'text-bg-' + ${x.estado.color}" th:text="${x.estado.etiqueta}"></span>
+
+</body>
+</html>

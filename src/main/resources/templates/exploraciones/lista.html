@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head th:replace="~{fragments :: head('Exploraciones')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav}"></nav>
+<main class="container">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h1 class="h3 m-0" th:text="${todas} ? 'Todas las exploraciones' : 'Mis exploraciones'">Mis exploraciones</h1>
+    <div class="d-flex gap-2">
+      <a sec:authorize="hasRole('ADMIN')" class="btn btn-outline-secondary"
+         th:href="@{/exploraciones(todas=${!todas})}" th:text="${todas} ? 'Ver solo las mías' : 'Ver todas'">Ver todas</a>
+      <a class="btn btn-primary" th:href="@{/exploraciones/nueva}">Nueva exploración</a>
+    </div>
+  </div>
+  <div th:replace="~{fragments :: mensajes}"></div>
+
+  <div class="card" th:if="${#lists.isEmpty(exploraciones)}">
+    <div class="card-body text-center py-5">
+      <p class="mb-3">Todavía no tenés exploraciones.</p>
+      <a class="btn btn-primary" th:href="@{/exploraciones/nueva}">Crear la primera</a>
+    </div>
+  </div>
+
+  <div class="card" th:unless="${#lists.isEmpty(exploraciones)}">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+        <tr>
+          <th>Título</th>
+          <th th:if="${todas}">Propietario</th>
+          <th>Programación</th>
+          <th>Próxima ejecución</th>
+          <th>Última OK</th>
+          <th>Estado</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="e : ${exploraciones}">
+          <td><a th:href="@{/exploraciones/{id}(id=${e.id})}" th:text="${e.titulo}">Título</a></td>
+          <td th:if="${todas}" th:text="${e.propietario.upn}">usuario</td>
+          <td th:text="${@fmt.programacion(e)}">Semanal</td>
+          <td th:text="${@fmt.fecha(e.proximaEjecucion)}">—</td>
+          <td th:text="${@fmt.fecha(e.ultimaEjecucionOk)}">—</td>
+          <td>
+            <span th:if="${e.activa}" class="badge text-bg-success">Activa</span>
+            <span th:unless="${e.activa}" class="badge text-bg-secondary">Inactiva</span>
+            <span th:if="${e.fallasConsecutivas > 0}" class="badge text-bg-danger"
+                  th:text="'Fallas: ' + ${e.fallasConsecutivas}">Fallas</span>
+          </td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+</body>
+</html>

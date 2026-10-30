@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head('Ejecución')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav}"></nav>
+<main class="container mb-5" th:with="x=${ejecucion}">
+  <p class="mb-2"><a th:href="@{/exploraciones/{id}(id=${x.exploracion.id})}" th:text="'← ' + ${x.exploracion.titulo}">Volver</a></p>
+  <h1 class="h3">Ejecución del <span th:text="${@fmt.fecha(x.creadaEn)}"></span></h1>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <dl class="row mb-0">
+        <dt class="col-sm-3">Estado</dt><dd class="col-sm-9"><span th:replace="~{fragments :: estado(${x})}"></span></dd>
+        <dt class="col-sm-3">Modo</dt><dd class="col-sm-9" th:text="${x.modo.etiqueta}"></dd>
+        <dt class="col-sm-3">Programada para</dt><dd class="col-sm-9" th:text="${@fmt.fecha(x.programadaPara)}"></dd>
+        <dt class="col-sm-3">Intentos</dt><dd class="col-sm-9" th:text="${x.intentos}"></dd>
+        <dt class="col-sm-3">Próximo intento</dt><dd class="col-sm-9" th:text="${@fmt.fecha(x.proximoIntento)}"></dd>
+        <dt class="col-sm-3">Iniciada / finalizada</dt>
+        <dd class="col-sm-9" th:text="${@fmt.fecha(x.iniciadaEn)} + ' / ' + ${@fmt.fecha(x.finalizadaEn)}"></dd>
+        <dt class="col-sm-3">Destinatarios</dt><dd class="col-sm-9" th:text="${x.destinatarios ?: '—'}"></dd>
+        <dt class="col-sm-3" th:if="${x.ultimoError}">Error</dt>
+        <dd class="col-sm-9 text-danger" th:if="${x.ultimoError}" th:text="${x.ultimoError}"></dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="card mb-4" th:if="${x.resumen}">
+    <div class="card-body"><h2 class="h5">Resumen</h2><p class="mb-0 informe" th:text="${x.resumen}"></p></div>
+  </div>
+  <div class="card">
+    <div class="card-body">
+      <h2 class="h5">Informe</h2>
+      <div class="informe" th:text="${x.informe ?: 'El informe todavía no se generó.'}"></div>
+    </div>
+  </div>
+</main>
+</body>
+</html>

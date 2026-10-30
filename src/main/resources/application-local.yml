@@ -1,0 +1,18 @@
+# Perfil para desarrollo en la PC: SQL Server en Docker (ver README) y Flyway activo.
+spring:
+  datasource:
+    url: jdbc:sqlserver://localhost:1433;databaseName=ScoutingTest;encrypt=true;trustServerCertificate=true
+    username: sa
+    password: ${SCOUTING_DB_PASSWORD:Scouting.Local.2026}
+  flyway:
+    enabled: true
+
+server:
+  servlet:
+    session:
+      cookie:
+        secure: false
+
+logging:
+  level:
+    uy.edu.ucu.scouting: DEBUG

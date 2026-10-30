@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head(${grupo} ? ${grupo.nombre} : 'Nuevo grupo')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav}"></nav>
+<main class="container mb-5">
+  <p class="mb-2"><a th:href="@{/admin/grupos}">← Grupos</a></p>
+  <h1 class="h3" th:text="${grupo} ? ${grupo.nombre} : 'Nuevo grupo'">Grupo</h1>
+  <div th:replace="~{fragments :: mensajes}"></div>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <form th:object="${form}" method="post"
+            th:action="${grupo} ? @{/admin/grupos/{id}(id=${grupo.id})} : @{/admin/grupos/nuevo}">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label" for="nombre">Nombre</label>
+            <input class="form-control" th:field="*{nombre}" th:errorclass="is-invalid" maxlength="100" required>
+            <div class="invalid-feedback" th:errors="*{nombre}"></div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" for="descripcion">Descripción</label>
+            <input class="form-control" th:field="*{descripcion}" maxlength="500">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label" for="maxParticipantes">Tope de participantes</label>
+            <input class="form-control" type="number" min="1" th:field="*{maxParticipantes}" th:errorclass="is-invalid" placeholder="Global">
+            <div class="invalid-feedback" th:errors="*{maxParticipantes}"></div>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label" for="maxExploracionesActivas">Tope de exploraciones activas</label>
+            <input class="form-control" type="number" min="1" th:field="*{maxExploracionesActivas}" th:errorclass="is-invalid" placeholder="Global">
+            <div class="invalid-feedback" th:errors="*{maxExploracionesActivas}"></div>
+          </div>
+          <div class="col-md-3 d-flex align-items-end">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" th:field="*{esAdmin}">
+              <label class="form-check-label" for="esAdmin1">Administradores</label>
+            </div>
+          </div>
+          <div class="col-md-3 d-flex align-items-end">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" th:field="*{activo}">
+              <label class="form-check-label" for="activo1">Activo</label>
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-primary mt-3" type="submit">Guardar</button>
+      </form>
+    </div>
+  </div>
+
+  <section class="card" id="miembros" th:if="${grupo}">
+    <div class="card-body">
+      <h2 class="h5">Miembros</h2>
+      <form class="row g-2 mb-3" th:action="@{/admin/grupos/{id}/miembros(id=${grupo.id})}" method="post">
+        <div class="col-sm-8 col-md-6">
+          <label class="visually-hidden" for="upn">Correo institucional</label>
+          <input class="form-control" id="upn" name="upn" type="email" placeholder="nombre.apellido@ucu.edu.uy" required>
+        </div>
+        <div class="col-auto"><button class="btn btn-outline-primary" type="submit">Agregar</button></div>
+        <div class="form-text">Si la persona todavía no ingresó a la app, queda dada de alta y se vincula en su primer ingreso.</div>
+      </form>
+      <p class="text-body-secondary" th:if="${#sets.isEmpty(grupo.miembros)}">Sin miembros.</p>
+      <div class="table-responsive" th:unless="${#sets.isEmpty(grupo.miembros)}">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Nombre</th><th>UPN</th><th>Último ingreso</th><th></th></tr></thead>
+          <tbody>
+          <tr th:each="m : ${grupo.miembros}">
+            <td th:text="${m.nombre}">Nombre</td>
+            <td th:text="${m.upn}">upn</td>
+            <td th:text="${m.ultimoAcceso} ? ${@fmt.fecha(m.ultimoAcceso)} : 'Nunca ingresó'">—</td>
+            <td class="text-end">
+              <form method="post" data-confirmar="¿Quitar a esta persona del grupo?"
+                    th:action="@{/admin/grupos/{id}/miembros/{uid}/eliminar(id=${grupo.id},uid=${m.id})}">
+                <button class="btn btn-sm btn-link text-danger" type="submit">Quitar</button>
+              </form>
+            </td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

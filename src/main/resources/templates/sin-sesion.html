@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head('Sesión cerrada')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav}"></nav>
+<main class="container">
+  <div class="card"><div class="card-body py-5 text-center">
+    <h1 class="h4">Cerraste la sesión</h1>
+    <a class="btn btn-primary mt-2" th:href="@{/}">Volver a ingresar</a>
+  </div></div>
+</main>
+</body>
+</html>

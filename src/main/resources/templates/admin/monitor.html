@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head('Monitor')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav}"></nav>
+<main class="container-fluid px-4 mb-5">
+  <h1 class="h3">Monitor de ejecuciones</h1>
+  <div th:replace="~{fragments :: mensajes}"></div>
+  <form class="row g-2 align-items-end mb-3" th:action="@{/admin/ejecuciones}" method="get">
+    <div class="col-sm-6 col-md-2">
+      <label class="form-label" for="estado">Estado</label>
+      <select class="form-select" id="estado" name="estado">
+        <option value="">Todos</option>
+        <option th:each="s : ${estados}" th:value="${s}" th:text="${s.etiqueta}" th:selected="${s == fEstado}"></option>
+      </select>
+    </div>
+    <div class="col-sm-6 col-md-3">
+      <label class="form-label" for="propietario">Propietario</label>
+      <input class="form-control" id="propietario" name="propietario" th:value="${fPropietario}" placeholder="parte del correo">
+    </div>
+    <div class="col-sm-6 col-md-2">
+      <label class="form-label" for="desde">Desde</label>
+      <input class="form-control" type="date" id="desde" name="desde" th:value="${fDesde}">
+    </div>
+    <div class="col-sm-6 col-md-2">
+      <label class="form-label" for="hasta">Hasta</label>
+      <input class="form-control" type="date" id="hasta" name="hasta" th:value="${fHasta}">
+    </div>
+    <div class="col-auto"><button class="btn btn-primary" type="submit">Filtrar</button></div>
+  </form>
+  <div class="card">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead><tr><th>Creada</th><th>Exploración</th><th>Propietario</th><th>Modo</th><th>Estado</th><th>Intentos</th><th>Próximo intento</th><th>Error</th><th></th></tr></thead>
+        <tbody>
+        <tr th:each="x : ${ejecuciones}">
+          <td><a th:href="@{/ejecuciones/{id}(id=${x.id})}" th:text="${@fmt.fecha(x.creadaEn)}">fecha</a></td>
+          <td><a th:href="@{/exploraciones/{id}(id=${x.exploracion.id})}" th:text="${x.exploracion.titulo}">título</a></td>
+          <td th:text="${x.exploracion.propietario.upn}">upn</td>
+          <td th:text="${x.modo.etiqueta}">modo</td>
+          <td><span th:replace="~{fragments :: estado(${x})}"></span></td>
+          <td th:text="${x.intentos}">0</td>
+          <td th:text="${@fmt.fecha(x.proximoIntento)}">—</td>
+          <td class="small text-danger" th:text="${x.ultimoError != null and #strings.length(x.ultimoError) > 100} ? ${#strings.substring(x.ultimoError, 0, 100)} + '…' : ${x.ultimoError}"></td>
+          <td>
+            <form th:if="${x.estado.name() == 'FALLIDO'}" method="post"
+                  th:action="@{/admin/ejecuciones/{id}/reintentar(id=${x.id})}">
+              <button class="btn btn-sm btn-outline-primary" type="submit">Reintentar</button>
+            </form>
+          </td>
+        </tr>
+        <tr th:if="${#lists.isEmpty(ejecuciones)}"><td colspan="9" class="text-center text-body-secondary py-4">Sin ejecuciones para el filtro.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <p class="small text-body-secondary mt-2">Se muestran las 200 más recientes.</p>
+</main>
+</body>
+</html>

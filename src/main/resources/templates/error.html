@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head('Error')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav}"></nav>
+<main class="container">
+  <div class="card"><div class="card-body py-5 text-center">
+    <h1 class="h4" th:text="${status == 404} ? 'No encontramos lo que buscabas' : 'Algo salió mal'">Algo salió mal</h1>
+    <p th:text="${mensaje} ?: 'Probá de nuevo en unos minutos. Si el problema sigue, avisá al equipo de Aplicaciones.'"></p>
+    <a class="btn btn-primary" th:href="@{/exploraciones}">Ir a mis exploraciones</a>
+  </div></div>
+</main>
+</body>
+</html>

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head(${exploracion} ? ${exploracion.titulo} : 'Nueva exploración')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav}"></nav>
+<main class="container mb-5">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h1 class="h3 m-0" th:text="${exploracion} ? ${exploracion.titulo} : 'Nueva exploración'">Exploración</h1>
+    <div class="d-flex flex-wrap gap-2" th:if="${exploracion}">
+      <form th:action="@{/exploraciones/{id}/ejecutar(id=${exploracion.id})}" method="post">
+        <input type="hidden" name="modo" value="prueba">
+        <button class="btn btn-outline-primary" type="submit">Probar (solo a mí)</button>
+      </form>
+      <form th:action="@{/exploraciones/{id}/ejecutar(id=${exploracion.id})}" method="post"
+            data-confirmar="Se va a generar el informe y enviar ahora a todos los participantes activos. La programación habitual no cambia. ¿Continuar?">
+        <input type="hidden" name="modo" value="enviar">
+        <button class="btn btn-primary" type="submit">Enviar ahora</button>
+      </form>
+      <form th:action="@{/exploraciones/{id}/duplicar(id=${exploracion.id})}" method="post">
+        <button class="btn btn-outline-secondary" type="submit">Duplicar</button>
+      </form>
+      <form th:action="@{/exploraciones/{id}/eliminar(id=${exploracion.id})}" method="post"
+            data-confirmar="Se eliminará la exploración con sus participantes e historial. ¿Continuar?">
+        <button class="btn btn-outline-danger" type="submit">Eliminar</button>
+      </form>
+    </div>
+  </div>
+  <div th:replace="~{fragments :: mensajes}"></div>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <form th:object="${form}" method="post"
+            th:action="${exploracion} ? @{/exploraciones/{id}(id=${exploracion.id})} : @{/exploraciones}">
+        <input type="hidden" th:field="*{version}">
+        <div class="alert alert-danger" th:if="${#fields.hasGlobalErrors()}" th:errors="*{global}"></div>
+
+        <div class="mb-3">
+          <label class="form-label" for="titulo">Título</label>
+          <input class="form-control" th:field="*{titulo}" th:errorclass="is-invalid" maxlength="200" required>
+          <div class="invalid-feedback" th:errors="*{titulo}"></div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="prompt">Prompt de scouting</label>
+          <textarea class="form-control prompt" th:field="*{prompt}" th:errorclass="is-invalid"
+                    maxlength="100000" rows="18" required></textarea>
+          <div class="form-text contador" id="contador-prompt"></div>
+          <div class="invalid-feedback" th:errors="*{prompt}"></div>
+          <div class="form-text">Para que el correo incluya un resumen, pedile al agente que lo escriba después de una línea con <code>===RESUMEN===</code>.</div>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-sm-6 col-lg-3">
+            <label class="form-label" for="frecuencia">Frecuencia</label>
+            <select class="form-select" th:field="*{frecuencia}">
+              <option th:each="f : ${frecuencias}" th:value="${f}" th:text="${f.etiqueta}">Semanal</option>
+            </select>
+          </div>
+          <div class="col-sm-6 col-lg-3" id="grupo-dia-semana">
+            <label class="form-label" for="diaSemana">Día de la semana</label>
+            <select class="form-select" th:field="*{diaSemana}">
+              <option th:each="d, st : ${dias}" th:value="${st.count}" th:text="${d}">lunes</option>
+            </select>
+          </div>
+          <div class="col-sm-6 col-lg-3" id="grupo-dia-mes">
+            <label class="form-label" for="diaMes">Día del mes</label>
+            <select class="form-select" th:field="*{diaMes}" th:errorclass="is-invalid">
+              <option value="">Elegí</option>
+              <option th:each="d : ${diasMes}" th:value="${d}" th:text="${d}">1</option>
+            </select>
+            <div class="invalid-feedback" th:errors="*{diaMes}"></div>
+          </div>
+          <div class="col-sm-6 col-lg-3">
+            <label class="form-label" for="hora">Hora (Montevideo)</label>
+            <select class="form-select" th:field="*{hora}">
+              <option th:each="h : ${horas}" th:value="${h}" th:text="${@fmt.hora(h)}">09:00</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" th:field="*{activa}">
+          <label class="form-check-label" for="activa1">Activa (se ejecuta según la programación)</label>
+        </div>
+
+        <dl class="row small text-body-secondary" th:if="${exploracion}">
+          <dt class="col-sm-3">Próxima ejecución</dt><dd class="col-sm-9" th:text="${@fmt.fecha(exploracion.proximaEjecucion)}"></dd>
+          <dt class="col-sm-3">Última ejecución OK</dt><dd class="col-sm-9" th:text="${@fmt.fecha(exploracion.ultimaEjecucionOk)}"></dd>
+          <dt class="col-sm-3">Último resumen</dt><dd class="col-sm-9" th:text="${exploracion.ultimoResumen ?: '—'}"></dd>
+          <dt class="col-sm-3">Propietario</dt><dd class="col-sm-9" th:text="${exploracion.propietario.nombre}"></dd>
+        </dl>
+
+        <button class="btn btn-primary" type="submit">Guardar</button>
+        <a class="btn btn-link" th:href="@{/exploraciones}">Volver</a>
+      </form>
+    </div>
+  </div>
+
+  <div class="alert alert-info" th:unless="${exploracion}">Guardá la exploración para poder agregar participantes.</div>
+
+  <section class="card mb-4" id="participantes" th:if="${exploracion}">
+    <div class="card-body">
+      <h2 class="h5">Participantes
+        <small class="text-body-secondary fw-normal"
+               th:text="${exploracion.participantesActivos()} + ' activos de un máximo de ' + ${topeParticipantes}"></small>
+      </h2>
+      <form class="mb-3" th:action="@{/exploraciones/{id}/participantes(id=${exploracion.id})}" method="post">
+        <label class="form-label" for="correos">Agregar correos (uno o varios, separados por coma o salto de línea)</label>
+        <div class="input-group">
+          <textarea class="form-control" id="correos" name="correos" rows="2" required
+                    placeholder="nombre.apellido@ucu.edu.uy"></textarea>
+          <button class="btn btn-outline-primary" type="submit">Agregar</button>
+        </div>
+      </form>
+      <p class="text-body-secondary" th:if="${#lists.isEmpty(exploracion.participantes)}">Sin participantes todavía.</p>
+      <div class="table-responsive" th:unless="${#lists.isEmpty(exploracion.participantes)}">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Correo</th><th>Estado</th><th class="text-end">Acciones</th></tr></thead>
+          <tbody>
+          <tr th:each="p : ${exploracion.participantes}">
+            <td th:text="${p.correo}">correo</td>
+            <td>
+              <span th:if="${p.activo}" class="badge text-bg-success">Activo</span>
+              <span th:unless="${p.activo}" class="badge text-bg-secondary">Inactivo</span>
+            </td>
+            <td class="text-end">
+              <form class="d-inline" method="post"
+                    th:action="@{/exploraciones/{id}/participantes/{pid}/activo(id=${exploracion.id},pid=${p.id})}">
+                <input type="hidden" name="activo" th:value="${!p.activo}">
+                <button class="btn btn-sm btn-link" type="submit" th:text="${p.activo} ? 'Desactivar' : 'Activar'">Desactivar</button>
+              </form>
+              <form class="d-inline" method="post" data-confirmar="¿Quitar este participante?"
+                    th:action="@{/exploraciones/{id}/participantes/{pid}/eliminar(id=${exploracion.id},pid=${p.id})}">
+                <button class="btn btn-sm btn-link text-danger" type="submit">Quitar</button>
+              </form>
+            </td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="historial" th:if="${exploracion}">
+    <div class="card-body">
+      <h2 class="h5">Historial <small class="text-body-secondary fw-normal">últimas 20 ejecuciones</small></h2>
+      <p class="text-body-secondary" th:if="${#lists.isEmpty(historial)}">Todavía no hubo ejecuciones.</p>
+      <div class="table-responsive" th:unless="${#lists.isEmpty(historial)}">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Fecha</th><th>Modo</th><th>Estado</th><th>Intentos</th><th>Destinatarios</th><th>Error</th></tr></thead>
+          <tbody>
+          <tr th:each="x : ${historial}">
+            <td><a th:href="@{/ejecuciones/{id}(id=${x.id})}" th:text="${@fmt.fecha(x.creadaEn)}">fecha</a></td>
+            <td th:text="${x.modo.etiqueta}">Programada</td>
+            <td><span th:replace="~{fragments :: estado(${x})}"></span></td>
+            <td th:text="${x.intentos}">1</td>
+            <td th:text="${x.destinatarios ?: '—'}">—</td>
+            <td class="small text-danger" th:text="${x.ultimoError != null and #strings.length(x.ultimoError) > 120} ? ${#strings.substring(x.ultimoError, 0, 120)} + '…' : ${x.ultimoError}"></td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

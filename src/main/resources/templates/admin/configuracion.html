@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head('Configuración')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav}"></nav>
+<main class="container mb-5">
+  <h1 class="h3">Configuración</h1>
+  <div th:replace="~{fragments :: mensajes}"></div>
+  <div class="card">
+    <div class="card-body">
+      <form th:object="${form}" th:action="@{/admin/configuracion}" method="post">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label" for="maxParticipantes">Máximo de participantes por exploración</label>
+            <input class="form-control" type="number" min="1" th:field="*{maxParticipantes}" th:errorclass="is-invalid">
+            <div class="invalid-feedback" th:errors="*{maxParticipantes}"></div>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" for="maxExploracionesActivas">Máximo de exploraciones activas por usuario</label>
+            <input class="form-control" type="number" min="1" th:field="*{maxExploracionesActivas}" th:errorclass="is-invalid">
+            <div class="invalid-feedback" th:errors="*{maxExploracionesActivas}"></div>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" for="dominiosPermitidos">Dominios permitidos para participantes</label>
+            <input class="form-control" th:field="*{dominiosPermitidos}" th:errorclass="is-invalid">
+            <div class="form-text">Separados por punto y coma, por ejemplo ucu.edu.uy; correo.ucu.edu.uy</div>
+            <div class="invalid-feedback" th:errors="*{dominiosPermitidos}"></div>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" for="maxIntentos">Intentos por ejecución</label>
+            <input class="form-control" type="number" min="1" max="10" th:field="*{maxIntentos}" th:errorclass="is-invalid">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" for="fallasParaDesactivar">Fallas seguidas para desactivar</label>
+            <input class="form-control" type="number" min="1" max="30" th:field="*{fallasParaDesactivar}" th:errorclass="is-invalid">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" for="correoAlertasTi">Correo de alertas de TI</label>
+            <input class="form-control" type="email" th:field="*{correoAlertasTi}" th:errorclass="is-invalid">
+            <div class="invalid-feedback" th:errors="*{correoAlertasTi}"></div>
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="pieCorreo">Pie del correo</label>
+            <textarea class="form-control" rows="3" maxlength="2000" th:field="*{pieCorreo}"></textarea>
+          </div>
+        </div>
+        <p class="small text-body-secondary mt-3 mb-2" th:if="${config.modificadoPor}"
+           th:text="'Última modificación: ' + ${@fmt.fecha(config.modificadoEn)} + ' por ' + ${config.modificadoPor}"></p>
+        <button class="btn btn-primary mt-2" type="submit">Guardar</button>
+      </form>
+    </div>
+  </div>
+</main>
+</body>
+</html>

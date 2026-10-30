@@ -1,0 +1,62 @@
+{
+  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "description": "Scouting - Planificador. Cada 5 minutos toma un lote de la cola en SQL Server (vía gateway) y llama al flujo hijo por cada ejecución.",
+  "parameters": {
+    "$connections": { "defaultValue": {}, "type": "Object" },
+    "$authentication": { "defaultValue": {}, "type": "SecureObject" }
+  },
+  "triggers": {
+    "Recurrencia": {
+      "type": "Recurrence",
+      "recurrence": { "frequency": "Minute", "interval": 5 },
+      "runtimeConfiguration": { "concurrency": { "runs": 1 } }
+    }
+  },
+  "actions": {
+    "Tomar_lote": {
+      "type": "OpenApiConnection",
+      "inputs": {
+        "host": { "connectionName": "shared_sql", "operationId": "ExecuteProcedure_V2", "apiId": "/providers/Microsoft.PowerApps/apis/shared_sql" },
+        "parameters": {
+          "server": "default",
+          "database": "default",
+          "procedure": "[scouting].[sp_tomar_lote]",
+          "parameters/lote": 10,
+          "parameters/instancia": "@{workflow()?['run']?['name']}"
+        },
+        "authentication": "@parameters('$authentication')"
+      },
+      "runAfter": {},
+      "retryPolicy": { "type": "exponential", "count": 4, "interval": "PT30S" }
+    },
+    "Por_cada_ejecucion": {
+      "type": "Foreach",
+      "foreach": "@coalesce(outputs('Tomar_lote')?['body/resultsets/Table1'], createArray())",
+      "runtimeConfiguration": { "concurrency": { "repetitions": 5 } },
+      "runAfter": { "Tomar_lote": [ "Succeeded" ] },
+      "actions": {
+        "Ejecutar_exploracion": {
+          "type": "Workflow",
+          "description": "Flujo hijo 'Scouting - Ejecutar exploración' (misma solución).",
+          "inputs": {
+            "host": { "workflowReferenceName": "<id del flujo hijo en la solución>" },
+            "body": {
+              "ejecucion_id": "@items('Por_cada_ejecucion')?['ejecucion_id']",
+              "modo": "@items('Por_cada_ejecucion')?['modo']",
+              "titulo": "@items('Por_cada_ejecucion')?['titulo']",
+              "prompt": "@items('Por_cada_ejecucion')?['prompt']",
+              "informe": "@coalesce(items('Por_cada_ejecucion')?['informe'], '')",
+              "creador_email": "@items('Por_cada_ejecucion')?['creador_email']",
+              "creador_nombre": "@items('Por_cada_ejecucion')?['creador_nombre']",
+              "participantes": "@items('Por_cada_ejecucion')?['participantes']",
+              "pie_correo": "@items('Por_cada_ejecucion')?['pie_correo']"
+            }
+          },
+          "runAfter": {}
+        }
+      }
+    }
+  },
+  "outputs": {}
+}
