@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
   "contentVersion": "1.0.0.0",
-  "description": "InstructionBuilder (componente reutilizable). Recibe un Trabajo (contratos/trabajo.schema.json) en trabajoJson; arma la instrucción (prompt + plantilla + políticas + variables), llama al agente indicado si no hay resultadoPrevio, separa el resumen (===RESUMEN===) y pide el envío a Comunicaciones. Siempre responde resultadoJson (contratos/resultado.schema.json), incluida la respuesta del agente aunque falle el envío.",
+  "description": "InstructionBuilder (componente reutilizable). Recibe un Trabajo en trabajoJson y arma la instrucción en dos capas: 1) capa del origen: prompt + plantilla + variables; 2) capa institucional: el perfil (de la variable de entorno de la solución ucu_InstruccionesInstitucionales) envuelve la instrucción con su plantilla ({{instruccion}}) y suma sus políticas a las del origen. Luego llama al agente (si no hay resultadoPrevio), separa el resumen y pide el envío a Comunicaciones. Siempre responde resultadoJson.",
   "parameters": {
     "$connections": {
       "defaultValue": {},
@@ -10,6 +10,14 @@
     "$authentication": {
       "defaultValue": {},
       "type": "SecureObject"
+    },
+    "ucu_InstruccionesInstitucionales (ucu_InstruccionesInstitucionales)": {
+      "defaultValue": {},
+      "type": "Object",
+      "metadata": {
+        "schemaName": "ucu_InstruccionesInstitucionales",
+        "description": "Variable de entorno (JSON) con los perfiles institucionales. Ejemplo en power-automate/config/instrucciones-institucionales.example.json"
+      }
     }
   },
   "triggers": {
@@ -91,6 +99,68 @@
           },
           "runAfter": {}
         },
+        "Perfil": {
+          "type": "Compose",
+          "description": "Perfil institucional elegido (o el por defecto). Si no existe, falla en etapa 'instruccion'.",
+          "inputs": "@parameters('ucu_InstruccionesInstitucionales (ucu_InstruccionesInstitucionales)')?['perfiles']?[coalesce(variables('trabajo')?['instruccion']?['perfil'],parameters('ucu_InstruccionesInstitucionales (ucu_InstruccionesInstitucionales)')?['perfilPorDefecto'],'sin-reglas')]",
+          "runAfter": {
+            "Base": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Perfil_valido": {
+          "type": "If",
+          "expression": {
+            "equals": [
+              "@empty(outputs('Perfil'))",
+              true
+            ]
+          },
+          "runAfter": {
+            "Perfil": [
+              "Succeeded"
+            ]
+          },
+          "actions": {
+            "Perfil_inexistente": {
+              "type": "Terminate",
+              "inputs": {
+                "runStatus": "Failed",
+                "runError": {
+                  "code": "PerfilInexistente",
+                  "message": "@concat('Perfil institucional inexistente: ',coalesce(variables('trabajo')?['instruccion']?['perfil'],''))"
+                }
+              },
+              "runAfter": {}
+            }
+          },
+          "else": {
+            "actions": {}
+          }
+        },
+        "Instruccion_origen": {
+          "type": "Compose",
+          "inputs": "@variables('instruccion')",
+          "runAfter": {
+            "Perfil_valido": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Capa_institucional": {
+          "type": "SetVariable",
+          "description": "Envuelve la instrucción del origen con la plantilla del perfil institucional ({{instruccion}}).",
+          "inputs": {
+            "name": "instruccion",
+            "value": "@replace(coalesce(outputs('Perfil')?['plantilla'],'{{instruccion}}'),'{{instruccion}}',outputs('Instruccion_origen'))"
+          },
+          "runAfter": {
+            "Instruccion_origen": [
+              "Succeeded"
+            ]
+          }
+        },
         "Reemplazar_variables": {
           "type": "Foreach",
           "foreach": "@coalesce(variables('trabajo')?['instruccion']?['variables'],createArray())",
@@ -100,7 +170,7 @@
             }
           },
           "runAfter": {
-            "Base": [
+            "Capa_institucional": [
               "Succeeded"
             ]
           },
@@ -122,13 +192,24 @@
                 ]
               }
             }
+          },
+          "description": "Reemplaza {{nombre}} de cada variable en la instrucción completa (origen + institucional)."
+        },
+        "Politicas": {
+          "type": "Compose",
+          "description": "Políticas institucionales primero, luego las del origen.",
+          "inputs": "@union(coalesce(outputs('Perfil')?['politicas'],createArray()),coalesce(variables('trabajo')?['instruccion']?['politicas'],createArray()))",
+          "runAfter": {
+            "Reemplazar_variables": [
+              "Succeeded"
+            ]
           }
         },
         "Con_politicas": {
           "type": "Compose",
-          "inputs": "@if(empty(coalesce(variables('trabajo')?['instruccion']?['politicas'],createArray())),variables('instruccion'),concat(variables('instruccion'),decodeUriComponent('%0A%0A'),'Políticas que tenés que respetar:',decodeUriComponent('%0A'),'- ',join(variables('trabajo')?['instruccion']?['politicas'],concat(decodeUriComponent('%0A'),'- '))))",
+          "inputs": "@if(empty(outputs('Politicas')),variables('instruccion'),concat(variables('instruccion'),decodeUriComponent('%0A%0A'),'Reglas que tenés que respetar:',decodeUriComponent('%0A'),'- ',join(outputs('Politicas'),concat(decodeUriComponent('%0A'),'- '))))",
           "runAfter": {
-            "Reemplazar_variables": [
+            "Politicas": [
               "Succeeded"
             ]
           }
@@ -376,7 +457,8 @@
         "resumen": "@if(contains(variables('respuesta'),'===RESUMEN==='),trim(last(split(variables('respuesta'),'===RESUMEN==='))),'')",
         "destinatarios": "@variables('destinatarios')",
         "error": "@variables('error')",
-        "metadata": "@coalesce(variables('trabajo')?['metadata'],json('{}'))"
+        "metadata": "@coalesce(variables('trabajo')?['metadata'],json('{}'))",
+        "instruccionFinal": "@if(equals(variables('etapa'),'instruccion'),'',outputs('Con_politicas'))"
       }
     },
     "Responder": {

@@ -41,6 +41,10 @@
     },
     "metadata": {
       "type": "object"
+    },
+    "instruccionFinal": {
+      "type": "string",
+      "description": "Instrucción efectivamente enviada al agente (auditoría)."
     }
   }
 }

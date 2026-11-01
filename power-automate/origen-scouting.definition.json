@@ -82,7 +82,8 @@
                     "nombre": "titulo",
                     "valor": "@item()?['titulo']"
                   }
-                ]
+                ],
+                "perfil": "institucional-ucu"
               },
               "resultadoPrevio": "@coalesce(item()?['informe'],'')",
               "comunicacion": {

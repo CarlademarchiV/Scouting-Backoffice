@@ -40,13 +40,14 @@
         },
         "plantilla": {
           "type": "string",
-          "description": "Texto con marcadores {{prompt}} y {{nombre}}. Vacío = se usa el prompt tal cual."
+          "description": "Plantilla del origen, con marcadores {{prompt}} y {{nombre}}. Vacío = el prompt tal cual. Se aplica ANTES de la capa institucional."
         },
         "politicas": {
           "type": "array",
           "items": {
             "type": "string"
-          }
+          },
+          "description": "Políticas propias del origen; se suman a las institucionales."
         },
         "variables": {
           "type": "array",
@@ -65,6 +66,10 @@
               }
             }
           }
+        },
+        "perfil": {
+          "type": "string",
+          "description": "Perfil institucional a aplicar (de la variable de entorno ucu_InstruccionesInstitucionales). Vacío = perfilPorDefecto."
         }
       }
     },
