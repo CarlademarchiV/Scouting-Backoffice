@@ -5,7 +5,7 @@ Backoffice de UCU para que cada persona configure sus exploraciones de scouting:
 - **App**: Java 21, Spring Boot 3.5, Thymeleaf, Bootstrap 5.
 - **Base**: SQL Server en la red de UCU (esquema `scouting`, migraciones Flyway).
 - **Login**: Entra ID (OIDC). Los permisos se dan con grupos propios de la app.
-- **Proceso**: Power Automate + Copilot Studio, conectados a SQL Server por el gateway de datos local. Ver [power-automate/README.md](power-automate/README.md).
+- **Proceso**: Power Automate + Copilot Studio. Un flujo de origen de Scouting (único que conoce SQL, vía gateway) y tres componentes reutilizables: Planificador, InstructionBuilder y Comunicaciones. Ver [power-automate/README.md](power-automate/README.md).
 - **Diseño técnico**: [docs/diseno-tecnico.md](docs/diseno-tecnico.md).
 
 ```

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "resultado.schema.json",
+  "title": "Resultado (salida de InstructionBuilder y del Planificador)",
+  "type": "object",
+  "required": [
+    "id",
+    "ok",
+    "etapa"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "etapa": {
+      "type": "string",
+      "enum": [
+        "completo",
+        "instruccion",
+        "agente",
+        "comunicacion",
+        "planificador"
+      ],
+      "description": "Dónde terminó; 'completo' si ok."
+    },
+    "respuesta": {
+      "type": "string",
+      "description": "Respuesta del agente (aunque falle la comunicación)."
+    },
+    "resumen": {
+      "type": "string"
+    },
+    "destinatarios": {
+      "type": "integer"
+    },
+    "error": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object"
+    }
+  }
+}

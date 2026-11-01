@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "resultado-comunicacion.schema.json",
+  "title": "Resultado de Comunicaciones",
+  "type": "object",
+  "required": [
+    "ok"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    },
+    "destinatarios": {
+      "type": "integer"
+    },
+    "error": {
+      "type": "string"
+    }
+  }
+}

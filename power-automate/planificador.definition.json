@@ -1,62 +1,157 @@
 {
   "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
   "contentVersion": "1.0.0.0",
-  "description": "Scouting - Planificador. Cada 5 minutos toma un lote de la cola en SQL Server (vía gateway) y llama al flujo hijo por cada ejecución.",
+  "description": "Planificador (componente reutilizable). No conoce la fuente de datos: recibe en loteJson la lista de trabajos ya resuelta por el origen (contratos/lote.schema.json), ejecuta cada uno con InstructionBuilder (5 en paralelo), aísla las fallas y devuelve en resultadosJson un Resultado por trabajo.",
   "parameters": {
-    "$connections": { "defaultValue": {}, "type": "Object" },
-    "$authentication": { "defaultValue": {}, "type": "SecureObject" }
-  },
-  "triggers": {
-    "Recurrencia": {
-      "type": "Recurrence",
-      "recurrence": { "frequency": "Minute", "interval": 5 },
-      "runtimeConfiguration": { "concurrency": { "runs": 1 } }
+    "$connections": {
+      "defaultValue": {},
+      "type": "Object"
+    },
+    "$authentication": {
+      "defaultValue": {},
+      "type": "SecureObject"
     }
   },
-  "actions": {
-    "Tomar_lote": {
-      "type": "OpenApiConnection",
+  "triggers": {
+    "manual": {
+      "type": "Request",
+      "kind": "Button",
+      "description": "Flujo hijo",
       "inputs": {
-        "host": { "connectionName": "shared_sql", "operationId": "ExecuteProcedure_V2", "apiId": "/providers/Microsoft.PowerApps/apis/shared_sql" },
-        "parameters": {
-          "server": "default",
-          "database": "default",
-          "procedure": "[scouting].[sp_tomar_lote]",
-          "parameters/lote": 10,
-          "parameters/instancia": "@{workflow()?['run']?['name']}"
-        },
-        "authentication": "@parameters('$authentication')"
-      },
-      "runAfter": {},
-      "retryPolicy": { "type": "exponential", "count": 4, "interval": "PT30S" }
-    },
-    "Por_cada_ejecucion": {
-      "type": "Foreach",
-      "foreach": "@coalesce(outputs('Tomar_lote')?['body/resultsets/Table1'], createArray())",
-      "runtimeConfiguration": { "concurrency": { "repetitions": 5 } },
-      "runAfter": { "Tomar_lote": [ "Succeeded" ] },
-      "actions": {
-        "Ejecutar_exploracion": {
-          "type": "Workflow",
-          "description": "Flujo hijo 'Scouting - Ejecutar exploración' (misma solución).",
-          "inputs": {
-            "host": { "workflowReferenceName": "<id del flujo hijo en la solución>" },
-            "body": {
-              "ejecucion_id": "@items('Por_cada_ejecucion')?['ejecucion_id']",
-              "modo": "@items('Por_cada_ejecucion')?['modo']",
-              "titulo": "@items('Por_cada_ejecucion')?['titulo']",
-              "prompt": "@items('Por_cada_ejecucion')?['prompt']",
-              "informe": "@coalesce(items('Por_cada_ejecucion')?['informe'], '')",
-              "creador_email": "@items('Por_cada_ejecucion')?['creador_email']",
-              "creador_nombre": "@items('Por_cada_ejecucion')?['creador_nombre']",
-              "participantes": "@items('Por_cada_ejecucion')?['participantes']",
-              "pie_correo": "@items('Por_cada_ejecucion')?['pie_correo']"
+        "schema": {
+          "type": "object",
+          "properties": {
+            "loteJson": {
+              "type": "string",
+              "title": "loteJson",
+              "x-ms-dynamically-added": true,
+              "description": "Lista de Trabajos según contratos/lote.schema.json"
             }
           },
-          "runAfter": {}
+          "required": [
+            "loteJson"
+          ]
         }
       }
     }
   },
-  "outputs": {}
+  "actions": {
+    "Inicializar": {
+      "type": "InitializeVariable",
+      "inputs": {
+        "variables": [
+          {
+            "name": "resultados",
+            "type": "array",
+            "value": []
+          }
+        ]
+      },
+      "runAfter": {}
+    },
+    "Por_cada_trabajo": {
+      "type": "Foreach",
+      "foreach": "@json(triggerBody()?['text'])",
+      "runtimeConfiguration": {
+        "concurrency": {
+          "repetitions": 5
+        }
+      },
+      "runAfter": {
+        "Inicializar": [
+          "Succeeded"
+        ]
+      },
+      "actions": {
+        "Try": {
+          "type": "Scope",
+          "runAfter": {},
+          "actions": {
+            "InstructionBuilder": {
+              "type": "Workflow",
+              "inputs": {
+                "host": {
+                  "workflowReferenceName": "<id del flujo InstructionBuilder en la solución>"
+                },
+                "body": {
+                  "text": "@{string(items('Por_cada_trabajo'))}"
+                }
+              },
+              "retryPolicy": {
+                "type": "fixed",
+                "count": 2,
+                "interval": "PT30S"
+              }
+            },
+            "Agregar_resultado": {
+              "type": "AppendToArrayVariable",
+              "inputs": {
+                "name": "resultados",
+                "value": "@json(body('InstructionBuilder')?['resultadojson'])"
+              },
+              "runAfter": {
+                "InstructionBuilder": [
+                  "Succeeded"
+                ]
+              }
+            }
+          }
+        },
+        "Catch": {
+          "type": "Scope",
+          "runAfter": {
+            "Try": [
+              "Failed",
+              "TimedOut"
+            ]
+          },
+          "actions": {
+            "Agregar_falla": {
+              "type": "AppendToArrayVariable",
+              "inputs": {
+                "name": "resultados",
+                "value": {
+                  "id": "@{items('Por_cada_trabajo')?['id']}",
+                  "ok": false,
+                  "etapa": "planificador",
+                  "respuesta": "@{coalesce(items('Por_cada_trabajo')?['resultadoPrevio'],'')}",
+                  "resumen": "",
+                  "destinatarios": 0,
+                  "error": "No se pudo ejecutar InstructionBuilder (flujo hijo con error o tiempo agotado).",
+                  "metadata": "@items('Por_cada_trabajo')?['metadata']"
+                }
+              },
+              "runAfter": {}
+            }
+          }
+        }
+      }
+    },
+    "Responder": {
+      "type": "Response",
+      "kind": "PowerApp",
+      "inputs": {
+        "statusCode": 200,
+        "body": {
+          "resultadosjson": "@{string(variables('resultados'))}"
+        },
+        "schema": {
+          "type": "object",
+          "properties": {
+            "resultadosjson": {
+              "type": "string",
+              "title": "resultadosjson",
+              "x-ms-dynamically-added": true
+            }
+          }
+        }
+      },
+      "runAfter": {
+        "Por_cada_trabajo": [
+          "Succeeded",
+          "Failed"
+        ]
+      }
+    }
+  }
 }

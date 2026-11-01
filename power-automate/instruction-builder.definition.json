@@ -1,0 +1,408 @@
+{
+  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "description": "InstructionBuilder (componente reutilizable). Recibe un Trabajo (contratos/trabajo.schema.json) en trabajoJson; arma la instrucción (prompt + plantilla + políticas + variables), llama al agente indicado si no hay resultadoPrevio, separa el resumen (===RESUMEN===) y pide el envío a Comunicaciones. Siempre responde resultadoJson (contratos/resultado.schema.json), incluida la respuesta del agente aunque falle el envío.",
+  "parameters": {
+    "$connections": {
+      "defaultValue": {},
+      "type": "Object"
+    },
+    "$authentication": {
+      "defaultValue": {},
+      "type": "SecureObject"
+    }
+  },
+  "triggers": {
+    "manual": {
+      "type": "Request",
+      "kind": "Button",
+      "description": "Flujo hijo",
+      "inputs": {
+        "schema": {
+          "type": "object",
+          "properties": {
+            "trabajoJson": {
+              "type": "string",
+              "title": "trabajoJson",
+              "x-ms-dynamically-added": true,
+              "description": "Trabajo según contratos/trabajo.schema.json"
+            }
+          },
+          "required": [
+            "trabajoJson"
+          ]
+        }
+      }
+    }
+  },
+  "actions": {
+    "Inicializar": {
+      "type": "InitializeVariable",
+      "inputs": {
+        "variables": [
+          {
+            "name": "trabajo",
+            "type": "object",
+            "value": "@json(triggerBody()?['text'])"
+          },
+          {
+            "name": "instruccion",
+            "type": "string",
+            "value": ""
+          },
+          {
+            "name": "respuesta",
+            "type": "string",
+            "value": "@{coalesce(json(triggerBody()?['text'])?['resultadoPrevio'],'')}"
+          },
+          {
+            "name": "etapa",
+            "type": "string",
+            "value": "instruccion"
+          },
+          {
+            "name": "error",
+            "type": "string",
+            "value": ""
+          },
+          {
+            "name": "destinatarios",
+            "type": "integer",
+            "value": 0
+          }
+        ]
+      },
+      "runAfter": {}
+    },
+    "Try": {
+      "type": "Scope",
+      "runAfter": {
+        "Inicializar": [
+          "Succeeded"
+        ]
+      },
+      "actions": {
+        "Base": {
+          "type": "SetVariable",
+          "description": "Sin plantilla: el prompt tal cual. Con plantilla: reemplaza {{prompt}}.",
+          "inputs": {
+            "name": "instruccion",
+            "value": "@if(empty(coalesce(variables('trabajo')?['instruccion']?['plantilla'],'')),variables('trabajo')?['instruccion']?['prompt'],replace(variables('trabajo')?['instruccion']?['plantilla'],'{{prompt}}',variables('trabajo')?['instruccion']?['prompt']))"
+          },
+          "runAfter": {}
+        },
+        "Reemplazar_variables": {
+          "type": "Foreach",
+          "foreach": "@coalesce(variables('trabajo')?['instruccion']?['variables'],createArray())",
+          "runtimeConfiguration": {
+            "concurrency": {
+              "repetitions": 1
+            }
+          },
+          "runAfter": {
+            "Base": [
+              "Succeeded"
+            ]
+          },
+          "actions": {
+            "Valor_actual": {
+              "type": "Compose",
+              "inputs": "@variables('instruccion')",
+              "runAfter": {}
+            },
+            "Reemplazar": {
+              "type": "SetVariable",
+              "inputs": {
+                "name": "instruccion",
+                "value": "@replace(outputs('Valor_actual'),concat('{{',items('Reemplazar_variables')?['nombre'],'}}'),items('Reemplazar_variables')?['valor'])"
+              },
+              "runAfter": {
+                "Valor_actual": [
+                  "Succeeded"
+                ]
+              }
+            }
+          }
+        },
+        "Con_politicas": {
+          "type": "Compose",
+          "inputs": "@if(empty(coalesce(variables('trabajo')?['instruccion']?['politicas'],createArray())),variables('instruccion'),concat(variables('instruccion'),decodeUriComponent('%0A%0A'),'Políticas que tenés que respetar:',decodeUriComponent('%0A'),'- ',join(variables('trabajo')?['instruccion']?['politicas'],concat(decodeUriComponent('%0A'),'- '))))",
+          "runAfter": {
+            "Reemplazar_variables": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Etapa_agente": {
+          "type": "SetVariable",
+          "inputs": {
+            "name": "etapa",
+            "value": "agente"
+          },
+          "runAfter": {
+            "Con_politicas": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Falta_respuesta": {
+          "type": "If",
+          "expression": {
+            "equals": [
+              "@variables('respuesta')",
+              ""
+            ]
+          },
+          "runAfter": {
+            "Etapa_agente": [
+              "Succeeded"
+            ]
+          },
+          "actions": {
+            "Segun_agente": {
+              "type": "Switch",
+              "expression": "@variables('trabajo')?['agente']",
+              "runAfter": {},
+              "cases": {
+                "Scouting": {
+                  "case": "Scouting",
+                  "actions": {
+                    "Agente_Scouting": {
+                      "type": "OpenApiConnectionWebhook",
+                      "description": "Copilot Studio: Ejecutar un agente y esperar (ucu_Scouting). Para sumar un agente, agregar un caso con su propia acción.",
+                      "inputs": {
+                        "host": {
+                          "connectionName": "shared_microsoftcopilotstudio",
+                          "operationId": "ExecuteCopilotAsyncV2",
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_microsoftcopilotstudio"
+                        },
+                        "parameters": {
+                          "Copilot": "ucu_Scouting",
+                          "body/message": "@outputs('Con_politicas')"
+                        },
+                        "authentication": "@parameters('$authentication')"
+                      },
+                      "limit": {
+                        "timeout": "PT20M"
+                      },
+                      "runAfter": {}
+                    },
+                    "Respuesta_Scouting": {
+                      "type": "SetVariable",
+                      "inputs": {
+                        "name": "respuesta",
+                        "value": "@{body('Agente_Scouting')?['lastResponse']}"
+                      },
+                      "runAfter": {
+                        "Agente_Scouting": [
+                          "Succeeded"
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "default": {
+                "actions": {
+                  "Agente_no_soportado": {
+                    "type": "Terminate",
+                    "inputs": {
+                      "runStatus": "Failed",
+                      "runError": {
+                        "code": "AgenteNoSoportado",
+                        "message": "@concat('Agente no soportado: ',variables('trabajo')?['agente'])"
+                      }
+                    },
+                    "runAfter": {}
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "actions": {}
+          }
+        },
+        "Cuerpo": {
+          "type": "Compose",
+          "inputs": "@trim(first(split(variables('respuesta'),'===RESUMEN===')))",
+          "runAfter": {
+            "Falta_respuesta": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Resumen": {
+          "type": "Compose",
+          "inputs": "@if(contains(variables('respuesta'),'===RESUMEN==='),trim(last(split(variables('respuesta'),'===RESUMEN==='))),'')",
+          "runAfter": {
+            "Cuerpo": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Etapa_comunicacion": {
+          "type": "SetVariable",
+          "inputs": {
+            "name": "etapa",
+            "value": "comunicacion"
+          },
+          "runAfter": {
+            "Resumen": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Comunicaciones": {
+          "type": "Workflow",
+          "inputs": {
+            "host": {
+              "workflowReferenceName": "<id del flujo Comunicaciones en la solución>"
+            },
+            "body": {
+              "text": "@{string(setProperty(variables('trabajo')?['comunicacion'],'contenido',setProperty(setProperty(coalesce(variables('trabajo')?['comunicacion']?['contenido'],json('{}')),'cuerpo',outputs('Cuerpo')),'resumen',outputs('Resumen'))))}"
+            }
+          },
+          "retryPolicy": {
+            "type": "fixed",
+            "count": 2,
+            "interval": "PT30S"
+          }
+        },
+        "Resultado_comunicacion": {
+          "type": "Compose",
+          "inputs": "@json(body('Comunicaciones')?['resultadojson'])",
+          "runAfter": {
+            "Comunicaciones": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Comunicacion_ok": {
+          "type": "If",
+          "expression": {
+            "equals": [
+              "@outputs('Resultado_comunicacion')?['ok']",
+              true
+            ]
+          },
+          "runAfter": {
+            "Resultado_comunicacion": [
+              "Succeeded"
+            ]
+          },
+          "actions": {
+            "Etapa_completo": {
+              "type": "SetVariable",
+              "inputs": {
+                "name": "etapa",
+                "value": "completo"
+              },
+              "runAfter": {}
+            },
+            "Destinatarios": {
+              "type": "SetVariable",
+              "inputs": {
+                "name": "destinatarios",
+                "value": "@outputs('Resultado_comunicacion')?['destinatarios']"
+              },
+              "runAfter": {
+                "Etapa_completo": [
+                  "Succeeded"
+                ]
+              }
+            }
+          },
+          "else": {
+            "actions": {
+              "Error_comunicacion": {
+                "type": "SetVariable",
+                "inputs": {
+                  "name": "error",
+                  "value": "@{outputs('Resultado_comunicacion')?['error']}"
+                },
+                "runAfter": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "Catch": {
+      "type": "Scope",
+      "runAfter": {
+        "Try": [
+          "Failed",
+          "TimedOut"
+        ]
+      },
+      "actions": {
+        "Fallas": {
+          "type": "Query",
+          "inputs": {
+            "from": "@result('Try')",
+            "where": "@equals(item()?['status'],'Failed')"
+          },
+          "runAfter": {}
+        },
+        "Error": {
+          "type": "SetVariable",
+          "inputs": {
+            "name": "error",
+            "value": "@{string(coalesce(first(body('Fallas'))?['error']?['message'],first(body('Fallas'))?['outputs']?['body'],'Error sin detalle'))}"
+          },
+          "runAfter": {
+            "Fallas": [
+              "Succeeded"
+            ]
+          }
+        }
+      }
+    },
+    "Resultado": {
+      "type": "Compose",
+      "runAfter": {
+        "Catch": [
+          "Succeeded",
+          "Skipped",
+          "Failed"
+        ]
+      },
+      "inputs": {
+        "id": "@{variables('trabajo')?['id']}",
+        "ok": "@equals(variables('etapa'),'completo')",
+        "etapa": "@variables('etapa')",
+        "respuesta": "@variables('respuesta')",
+        "resumen": "@if(contains(variables('respuesta'),'===RESUMEN==='),trim(last(split(variables('respuesta'),'===RESUMEN==='))),'')",
+        "destinatarios": "@variables('destinatarios')",
+        "error": "@variables('error')",
+        "metadata": "@coalesce(variables('trabajo')?['metadata'],json('{}'))"
+      }
+    },
+    "Responder": {
+      "type": "Response",
+      "kind": "PowerApp",
+      "inputs": {
+        "statusCode": 200,
+        "body": {
+          "resultadojson": "@{string(outputs('Resultado'))}"
+        },
+        "schema": {
+          "type": "object",
+          "properties": {
+            "resultadojson": {
+              "type": "string",
+              "title": "resultadojson",
+              "x-ms-dynamically-added": true
+            }
+          }
+        }
+      },
+      "runAfter": {
+        "Resultado": [
+          "Succeeded"
+        ]
+      }
+    }
+  }
+}

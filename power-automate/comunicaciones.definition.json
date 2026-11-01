@@ -1,0 +1,256 @@
+{
+  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "description": "Comunicaciones (componente reutilizable). Recibe un Mensaje (contrato comunicacion.schema.json) en mensajeJson, arma el cuerpo según la plantilla y lo envía por el canal pedido. Nunca falla hacia arriba: siempre responde resultadoJson.",
+  "parameters": {
+    "$connections": {
+      "defaultValue": {},
+      "type": "Object"
+    },
+    "$authentication": {
+      "defaultValue": {},
+      "type": "SecureObject"
+    }
+  },
+  "triggers": {
+    "manual": {
+      "type": "Request",
+      "kind": "Button",
+      "description": "Flujo hijo",
+      "inputs": {
+        "schema": {
+          "type": "object",
+          "properties": {
+            "mensajeJson": {
+              "type": "string",
+              "title": "mensajeJson",
+              "x-ms-dynamically-added": true,
+              "description": "Mensaje según contratos/comunicacion.schema.json"
+            }
+          },
+          "required": [
+            "mensajeJson"
+          ]
+        }
+      }
+    }
+  },
+  "actions": {
+    "Mensaje": {
+      "type": "Compose",
+      "inputs": "@json(triggerBody()?['text'])",
+      "runAfter": {}
+    },
+    "Inicializar_resultado": {
+      "type": "InitializeVariable",
+      "inputs": {
+        "variables": [
+          {
+            "name": "resultado",
+            "type": "object",
+            "value": {
+              "ok": false,
+              "destinatarios": 0,
+              "error": ""
+            }
+          }
+        ]
+      },
+      "runAfter": {
+        "Mensaje": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Try": {
+      "type": "Scope",
+      "runAfter": {
+        "Inicializar_resultado": [
+          "Succeeded"
+        ]
+      },
+      "actions": {
+        "Cuerpo_html": {
+          "type": "Switch",
+          "expression": "@coalesce(outputs('Mensaje')?['plantilla'],'texto')",
+          "runAfter": {},
+          "cases": {
+            "Informe": {
+              "case": "informe",
+              "actions": {
+                "Html_informe": {
+                  "type": "Compose",
+                  "inputs": "@concat(if(empty(coalesce(outputs('Mensaje')?['banner'],'')),'',concat('<div style=\"background:#fff3cd;padding:8px;border:1px solid #ffe08a\"><b>',outputs('Mensaje')?['banner'],'</b></div>')),'<div style=\"font-family:Segoe UI,Arial,sans-serif;font-size:14px\">',replace(coalesce(outputs('Mensaje')?['contenido']?['cuerpo'],''),decodeUriComponent('%0A'),'<br>'),'</div>',if(empty(coalesce(outputs('Mensaje')?['pie'],'')),'',concat('<hr><p style=\"color:#666;font-size:12px\">',outputs('Mensaje')?['pie'],'</p>')))",
+                  "runAfter": {}
+                }
+              }
+            },
+            "Aviso_falla": {
+              "case": "aviso-falla",
+              "actions": {
+                "Html_falla": {
+                  "type": "Compose",
+                  "inputs": "@concat('<div style=\"font-family:Segoe UI,Arial,sans-serif;font-size:14px\"><p><b>',coalesce(outputs('Mensaje')?['contenido']?['titulo'],''),'</b></p><p>',replace(coalesce(outputs('Mensaje')?['contenido']?['cuerpo'],''),decodeUriComponent('%0A'),'<br>'),'</p></div>')",
+                  "runAfter": {}
+                }
+              }
+            }
+          },
+          "default": {
+            "actions": {
+              "Html_texto": {
+                "type": "Compose",
+                "inputs": "@replace(coalesce(outputs('Mensaje')?['contenido']?['cuerpo'],''),decodeUriComponent('%0A'),'<br>')",
+                "runAfter": {}
+              }
+            }
+          }
+        },
+        "Html": {
+          "type": "Compose",
+          "inputs": "@coalesce(outputs('Html_informe'),outputs('Html_falla'),outputs('Html_texto'))",
+          "runAfter": {
+            "Cuerpo_html": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Segun_canal": {
+          "type": "Switch",
+          "expression": "@coalesce(outputs('Mensaje')?['canal'],'')",
+          "runAfter": {
+            "Html": [
+              "Succeeded"
+            ]
+          },
+          "cases": {
+            "Correo": {
+              "case": "correo",
+              "actions": {
+                "Enviar_correo": {
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "host": {
+                      "connectionName": "shared_office365",
+                      "operationId": "SendEmailV2",
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365"
+                    },
+                    "parameters": {
+                      "emailMessage/To": "@join(coalesce(outputs('Mensaje')?['para'],createArray()),';')",
+                      "emailMessage/Cc": "@join(coalesce(outputs('Mensaje')?['cc'],createArray()),';')",
+                      "emailMessage/Bcc": "@join(coalesce(outputs('Mensaje')?['cco'],createArray()),';')",
+                      "emailMessage/ReplyTo": "@coalesce(outputs('Mensaje')?['responderA'],'')",
+                      "emailMessage/Subject": "@outputs('Mensaje')?['asunto']",
+                      "emailMessage/Body": "@outputs('Html')",
+                      "emailMessage/Importance": "@coalesce(outputs('Mensaje')?['importancia'],'Normal')"
+                    },
+                    "authentication": "@parameters('$authentication')"
+                  },
+                  "retryPolicy": {
+                    "type": "exponential",
+                    "count": 3,
+                    "interval": "PT1M"
+                  },
+                  "runAfter": {}
+                },
+                "Ok_correo": {
+                  "type": "SetVariable",
+                  "inputs": {
+                    "name": "resultado",
+                    "value": {
+                      "ok": true,
+                      "error": "",
+                      "destinatarios": "@add(add(length(coalesce(outputs('Mensaje')?['para'],createArray())),length(coalesce(outputs('Mensaje')?['cc'],createArray()))),length(coalesce(outputs('Mensaje')?['cco'],createArray())))"
+                    }
+                  },
+                  "runAfter": {
+                    "Enviar_correo": [
+                      "Succeeded"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "actions": {
+              "Canal_no_soportado": {
+                "type": "Terminate",
+                "inputs": {
+                  "runStatus": "Failed",
+                  "runError": {
+                    "code": "CanalNoSoportado",
+                    "message": "@concat('Canal no soportado: ',outputs('Mensaje')?['canal'])"
+                  }
+                },
+                "runAfter": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "Catch": {
+      "type": "Scope",
+      "runAfter": {
+        "Try": [
+          "Failed",
+          "TimedOut"
+        ]
+      },
+      "actions": {
+        "Fallas": {
+          "type": "Query",
+          "inputs": {
+            "from": "@result('Try')",
+            "where": "@equals(item()?['status'],'Failed')"
+          },
+          "runAfter": {}
+        },
+        "Error": {
+          "type": "SetVariable",
+          "inputs": {
+            "name": "resultado",
+            "value": {
+              "ok": false,
+              "destinatarios": 0,
+              "error": "@string(coalesce(first(body('Fallas'))?['error']?['message'],first(body('Fallas'))?['outputs']?['body'],'Error sin detalle'))"
+            }
+          },
+          "runAfter": {
+            "Fallas": [
+              "Succeeded"
+            ]
+          }
+        }
+      }
+    },
+    "Responder": {
+      "type": "Response",
+      "kind": "PowerApp",
+      "inputs": {
+        "statusCode": 200,
+        "body": {
+          "resultadojson": "@string(variables('resultado'))"
+        },
+        "schema": {
+          "type": "object",
+          "properties": {
+            "resultadojson": {
+              "type": "string",
+              "title": "resultadojson",
+              "x-ms-dynamically-added": true
+            }
+          }
+        }
+      },
+      "runAfter": {
+        "Catch": [
+          "Succeeded",
+          "Skipped",
+          "Failed"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "comunicacion.schema.json",
+  "title": "Mensaje (entrada de Comunicaciones)",
+  "type": "object",
+  "required": [
+    "canal",
+    "para",
+    "asunto",
+    "plantilla"
+  ],
+  "properties": {
+    "canal": {
+      "type": "string",
+      "enum": [
+        "correo"
+      ],
+      "description": "Hoy solo correo; a futuro teams, etc."
+    },
+    "para": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "cc": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "cco": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "responderA": {
+      "type": "string"
+    },
+    "asunto": {
+      "type": "string"
+    },
+    "plantilla": {
+      "type": "string",
+      "enum": [
+        "informe",
+        "aviso-falla",
+        "texto"
+      ]
+    },
+    "banner": {
+      "type": "string",
+      "description": "Texto destacado arriba del cuerpo (por ejemplo, PRUEBA). Vacío = sin banner."
+    },
+    "pie": {
+      "type": "string"
+    },
+    "importancia": {
+      "type": "string",
+      "enum": [
+        "Low",
+        "Normal",
+        "High"
+      ],
+      "default": "Normal"
+    },
+    "contenido": {
+      "type": "object",
+      "description": "Lo completa quien llama (InstructionBuilder u Origen).",
+      "properties": {
+        "titulo": {
+          "type": "string"
+        },
+        "cuerpo": {
+          "type": "string"
+        },
+        "resumen": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

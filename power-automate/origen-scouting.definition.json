@@ -1,0 +1,289 @@
+{
+  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "description": "Scouting - Origen (específico de Scouting). Único flujo que conoce SQL Server: toma el lote con sp_tomar_lote vía gateway, lo traduce al contrato Trabajo, llama al Planificador y registra cada resultado (sp_guardar_informe, sp_registrar_resultado). Si se agotaron los intentos, pide a Comunicaciones el aviso de falla.",
+  "parameters": {
+    "$connections": {
+      "defaultValue": {},
+      "type": "Object"
+    },
+    "$authentication": {
+      "defaultValue": {},
+      "type": "SecureObject"
+    }
+  },
+  "triggers": {
+    "Recurrencia": {
+      "type": "Recurrence",
+      "recurrence": {
+        "frequency": "Minute",
+        "interval": 5
+      },
+      "runtimeConfiguration": {
+        "concurrency": {
+          "runs": 1
+        }
+      }
+    }
+  },
+  "actions": {
+    "Tomar_lote": {
+      "type": "OpenApiConnection",
+      "inputs": {
+        "host": {
+          "connectionName": "shared_sql",
+          "operationId": "ExecuteProcedure_V2",
+          "apiId": "/providers/Microsoft.PowerApps/apis/shared_sql"
+        },
+        "parameters": {
+          "server": "default",
+          "database": "default",
+          "procedure": "[scouting].[sp_tomar_lote]",
+          "parameters/lote": 10,
+          "parameters/instancia": "@{workflow()?['run']?['name']}"
+        },
+        "authentication": "@parameters('$authentication')"
+      },
+      "retryPolicy": {
+        "type": "exponential",
+        "count": 4,
+        "interval": "PT30S"
+      },
+      "runAfter": {}
+    },
+    "Hay_trabajos": {
+      "type": "If",
+      "expression": {
+        "greater": [
+          "@length(coalesce(outputs('Tomar_lote')?['body/resultsets/Table1'],createArray()))",
+          0
+        ]
+      },
+      "runAfter": {
+        "Tomar_lote": [
+          "Succeeded"
+        ]
+      },
+      "actions": {
+        "A_contrato_Trabajo": {
+          "type": "Select",
+          "inputs": {
+            "from": "@outputs('Tomar_lote')?['body/resultsets/Table1']",
+            "select": {
+              "id": "@string(item()?['ejecucion_id'])",
+              "agente": "Scouting",
+              "modo": "@if(equals(item()?['modo'],1),'prueba',if(equals(item()?['modo'],2),'manual','programada'))",
+              "instruccion": {
+                "prompt": "@item()?['prompt']",
+                "plantilla": "",
+                "politicas": [],
+                "variables": [
+                  {
+                    "nombre": "titulo",
+                    "valor": "@item()?['titulo']"
+                  }
+                ]
+              },
+              "resultadoPrevio": "@coalesce(item()?['informe'],'')",
+              "comunicacion": {
+                "canal": "correo",
+                "para": [
+                  "@item()?['creador_email']"
+                ],
+                "cco": "@if(equals(item()?['modo'],1),createArray(),split(coalesce(item()?['participantes'],''),';'))",
+                "responderA": "@item()?['creador_email']",
+                "asunto": "@concat('[Scouting',if(equals(item()?['modo'],1),' - PRUEBA',''),'] ',item()?['titulo'])",
+                "plantilla": "informe",
+                "banner": "@if(equals(item()?['modo'],1),'PRUEBA: este correo solo te llegó a vos.','')",
+                "pie": "@coalesce(item()?['pie_correo'],'')",
+                "contenido": {
+                  "titulo": "@item()?['titulo']"
+                }
+              },
+              "metadata": {
+                "ejecucionId": "@item()?['ejecucion_id']",
+                "exploracionId": "@item()?['exploracion_id']",
+                "intentos": "@item()?['intentos']",
+                "creadorEmail": "@item()?['creador_email']",
+                "titulo": "@item()?['titulo']"
+              }
+            }
+          },
+          "runAfter": {}
+        },
+        "Planificador": {
+          "type": "Workflow",
+          "inputs": {
+            "host": {
+              "workflowReferenceName": "<id del flujo Planificador en la solución>"
+            },
+            "body": {
+              "text": "@{string(body('A_contrato_Trabajo'))}"
+            }
+          },
+          "retryPolicy": {
+            "type": "fixed",
+            "count": 2,
+            "interval": "PT30S"
+          },
+          "runAfter": {
+            "A_contrato_Trabajo": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Por_cada_resultado": {
+          "type": "Foreach",
+          "foreach": "@json(body('Planificador')?['resultadosjson'])",
+          "runtimeConfiguration": {
+            "concurrency": {
+              "repetitions": 5
+            }
+          },
+          "runAfter": {
+            "Planificador": [
+              "Succeeded"
+            ]
+          },
+          "actions": {
+            "Hay_respuesta": {
+              "type": "If",
+              "description": "Guarda la respuesta del agente para no volver a consumir créditos en un reintento.",
+              "expression": {
+                "not": [
+                  {
+                    "equals": [
+                      "@coalesce(items('Por_cada_resultado')?['respuesta'],'')",
+                      ""
+                    ]
+                  }
+                ]
+              },
+              "runAfter": {},
+              "actions": {
+                "Guardar_informe": {
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "host": {
+                      "connectionName": "shared_sql",
+                      "operationId": "ExecuteProcedure_V2",
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_sql"
+                    },
+                    "parameters": {
+                      "server": "default",
+                      "database": "default",
+                      "procedure": "[scouting].[sp_guardar_informe]",
+                      "parameters/ejecucion_id": "@items('Por_cada_resultado')?['metadata']?['ejecucionId']",
+                      "parameters/informe": "@items('Por_cada_resultado')?['respuesta']"
+                    },
+                    "authentication": "@parameters('$authentication')"
+                  },
+                  "retryPolicy": {
+                    "type": "exponential",
+                    "count": 4,
+                    "interval": "PT30S"
+                  },
+                  "runAfter": {}
+                }
+              },
+              "else": {
+                "actions": {}
+              }
+            },
+            "Registrar_resultado": {
+              "type": "OpenApiConnection",
+              "inputs": {
+                "host": {
+                  "connectionName": "shared_sql",
+                  "operationId": "ExecuteProcedure_V2",
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_sql"
+                },
+                "parameters": {
+                  "server": "default",
+                  "database": "default",
+                  "procedure": "[scouting].[sp_registrar_resultado]",
+                  "parameters/ejecucion_id": "@items('Por_cada_resultado')?['metadata']?['ejecucionId']",
+                  "parameters/ok": "@items('Por_cada_resultado')?['ok']",
+                  "parameters/destinatarios": "@items('Por_cada_resultado')?['destinatarios']",
+                  "parameters/resumen": "@items('Por_cada_resultado')?['resumen']",
+                  "parameters/error": "@if(items('Por_cada_resultado')?['ok'],null,concat(items('Por_cada_resultado')?['etapa'],': ',items('Por_cada_resultado')?['error']))"
+                },
+                "authentication": "@parameters('$authentication')"
+              },
+              "retryPolicy": {
+                "type": "exponential",
+                "count": 4,
+                "interval": "PT30S"
+              },
+              "runAfter": {
+                "Hay_respuesta": [
+                  "Succeeded"
+                ]
+              }
+            },
+            "Notificar": {
+              "type": "If",
+              "expression": {
+                "equals": [
+                  "@first(outputs('Registrar_resultado')?['body/resultsets/Table1'])?['notificar']",
+                  true
+                ]
+              },
+              "runAfter": {
+                "Registrar_resultado": [
+                  "Succeeded"
+                ]
+              },
+              "actions": {
+                "Mensaje_falla": {
+                  "type": "Compose",
+                  "runAfter": {},
+                  "inputs": {
+                    "canal": "correo",
+                    "plantilla": "aviso-falla",
+                    "para": [
+                      "@items('Por_cada_resultado')?['metadata']?['creadorEmail']"
+                    ],
+                    "cc": "@if(empty(first(outputs('Registrar_resultado')?['body/resultsets/Table1'])?['correo_alertas_ti']),createArray(),createArray(first(outputs('Registrar_resultado')?['body/resultsets/Table1'])?['correo_alertas_ti']))",
+                    "asunto": "@concat('[Scouting] No se pudo generar: ',items('Por_cada_resultado')?['metadata']?['titulo'])",
+                    "contenido": {
+                      "titulo": "@concat('La exploración ',items('Por_cada_resultado')?['metadata']?['titulo'],' falló después de todos los reintentos.')",
+                      "cuerpo": "@concat('Etapa: ',items('Por_cada_resultado')?['etapa'],decodeUriComponent('%0A'),'Error: ',items('Por_cada_resultado')?['error'],decodeUriComponent('%0A%0A'),if(equals(first(outputs('Registrar_resultado')?['body/resultsets/Table1'])?['desactivada'],true),'La exploración quedó desactivada por fallas seguidas. Revisala y reactivala desde el backoffice.','Se volverá a intentar en la próxima ejecución programada.'))"
+                    }
+                  }
+                },
+                "Aviso_falla": {
+                  "type": "Workflow",
+                  "inputs": {
+                    "host": {
+                      "workflowReferenceName": "<id del flujo Comunicaciones en la solución>"
+                    },
+                    "body": {
+                      "text": "@{string(outputs('Mensaje_falla'))}"
+                    }
+                  },
+                  "retryPolicy": {
+                    "type": "fixed",
+                    "count": 2,
+                    "interval": "PT30S"
+                  },
+                  "runAfter": {
+                    "Mensaje_falla": [
+                      "Succeeded"
+                    ]
+                  }
+                }
+              },
+              "else": {
+                "actions": {}
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "actions": {}
+      }
+    }
+  }
+}

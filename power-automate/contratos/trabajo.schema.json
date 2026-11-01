@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trabajo.schema.json",
+  "title": "Trabajo (entrada de Planificador e InstructionBuilder)",
+  "type": "object",
+  "required": [
+    "id",
+    "agente",
+    "instruccion",
+    "comunicacion"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Identificador de correlación del origen."
+    },
+    "agente": {
+      "type": "string",
+      "description": "Nombre lógico del agente de Copilot Studio (caso del Switch en InstructionBuilder).",
+      "examples": [
+        "Scouting"
+      ]
+    },
+    "modo": {
+      "type": "string",
+      "enum": [
+        "programada",
+        "prueba",
+        "manual"
+      ]
+    },
+    "instruccion": {
+      "type": "object",
+      "required": [
+        "prompt"
+      ],
+      "properties": {
+        "prompt": {
+          "type": "string"
+        },
+        "plantilla": {
+          "type": "string",
+          "description": "Texto con marcadores {{prompt}} y {{nombre}}. Vacío = se usa el prompt tal cual."
+        },
+        "politicas": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "variables": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "nombre",
+              "valor"
+            ],
+            "properties": {
+              "nombre": {
+                "type": "string"
+              },
+              "valor": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "resultadoPrevio": {
+      "type": "string",
+      "description": "Respuesta de un intento anterior. Si viene, no se llama al agente."
+    },
+    "comunicacion": {
+      "$ref": "comunicacion.schema.json"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Opaco para los componentes genéricos; se devuelve tal cual."
+    }
+  }
+}
