@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head('Ingreso de desarrollo')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav}"></nav>
+<main class="container" style="max-width: 32rem">
+  <div class="alert alert-warning">
+    <strong>Modo desarrollo:</strong> ingreso sin Entra ID, solo para pruebas en la PC local.
+  </div>
+  <div class="card">
+    <div class="card-body">
+      <h1 class="h4 mb-3">Ingresar</h1>
+      <div class="alert alert-danger" th:if="${param.error}">
+        No se pudo ingresar. Usá un correo válido de un dominio permitido (por ejemplo, @ucu.edu.uy).
+      </div>
+      <form th:action="@{/login-dev}" method="post">
+        <div class="mb-3">
+          <label class="form-label" for="username">Correo institucional</label>
+          <input class="form-control" id="username" name="username" type="email" required autofocus
+                 placeholder="nombre.apellido@ucu.edu.uy">
+          <div class="form-text">Si el correo está en <code>admins-iniciales</code> entrás como administrador. Podés probar con otro correo para ver la app como usuario común.</div>
+        </div>
+        <input type="hidden" name="password" value="dev">
+        <button class="btn btn-primary" type="submit">Ingresar</button>
+      </form>
+    </div>
+  </div>
+</main>
+</body>
+</html>

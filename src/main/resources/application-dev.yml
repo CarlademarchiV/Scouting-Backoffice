@@ -1,0 +1,6 @@
+# SOLO DESARROLLO: ingreso con el correo, sin Entra ID.
+# Usar junto con el perfil local:  mvn spring-boot:run "-Dspring-boot.run.profiles=local,dev"
+# Nunca activar este perfil en servidores.
+scouting:
+  auth:
+    modo: dev

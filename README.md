@@ -86,6 +86,14 @@ Requisitos: **Java 21** (por ejemplo Eclipse Temurin), **Maven 3.9**, **Docker D
 
 6. Entrar a http://localhost:8080 con la cuenta UCU. Si tu correo está en `admins-iniciales`, entrás como administrador; para habilitar a otras personas, sumalas a "Usuarios Scouting" en **Grupos** (rige desde su próximo ingreso).
 
+**Sin Entra ID (solo para probar en la PC):** si todavía no hay consentimiento de administrador para el registro de Entra, se puede usar el login de desarrollo, que pide solo el correo:
+
+```powershell
+mvn spring-boot:run "-Dspring-boot.run.profiles=local,dev"
+```
+
+Se entra en http://localhost:8080 con el correo institucional (si está en `admins-iniciales`, como administrador). Este modo nunca debe activarse en servidores.
+
 Para apagar la base: `docker stop scouting-sql` (y `docker start scouting-sql` para volver a usarla).
 
 ## Pruebas
