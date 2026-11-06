@@ -51,4 +51,13 @@ class DevLoginIT {
         mvc.perform(post("/login-dev").param("username", "alguien@gmail.com").param("password", "dev").with(csrf()))
                 .andExpect(redirectedUrl("/login-dev?error"));
     }
+
+    @Test
+    void desdeOtraMaquinaNoSeAccede() throws Exception {
+        mvc.perform(get("/login-dev").with(req -> {
+                    req.setRemoteAddr("203.0.113.10");
+                    return req;
+                }))
+                .andExpect(status().isForbidden());
+    }
 }

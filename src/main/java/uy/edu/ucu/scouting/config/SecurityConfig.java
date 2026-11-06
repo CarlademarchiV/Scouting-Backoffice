@@ -6,13 +6,17 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import uy.edu.ucu.scouting.security.DevAuthenticationProvider;
 import uy.edu.ucu.scouting.security.ScoutingOidcUserService;
+import uy.edu.ucu.scouting.security.SoloLocalFilter;
 
 /**
  * scouting.auth.modo = entra (por defecto): login con Entra ID.
- * scouting.auth.modo = dev: login de desarrollo solo con el correo (perfil "dev", nunca en servidores).
+ * scouting.auth.modo = dev: login de desarrollo solo con el correo (perfil "dev", nunca en servidores);
+ *   las pantallas solo responden a pedidos de la propia PC.
+ * La API /api/** tiene su propia cadena (ApiSecurityConfig).
  */
 @Slf4j
 @Configuration
@@ -35,6 +39,7 @@ public class SecurityConfig {
         log.warn("*  Usar solo en la PC local. Nunca en servidores.                      *");
         log.warn("************************************************************************");
         comun(http)
+            .addFilterBefore(new SoloLocalFilter(), UsernamePasswordAuthenticationFilter.class)
             .authenticationProvider(devProvider)
             .formLogin(form -> form
                 .loginPage("/login-dev").permitAll()

@@ -1,10 +1,10 @@
 # Flujos de Power Automate
 
-La integración se arma con un **origen específico** de Scouting y **tres componentes reutilizables**. Solo el origen conoce SQL Server; los componentes genéricos se pasan la información con contratos JSON y los puede reutilizar otro agente con solo crear su propio origen.
+La integración se arma con un **origen específico** de Scouting y **tres componentes reutilizables**. Solo el origen conoce la cola de Scouting, y la usa por la **API del backoffice** (`/api/flujo`, sin gateway); los componentes genéricos se pasan la información con contratos JSON y los puede reutilizar otro agente con solo crear su propio origen.
 
 | Flujo | Archivo | Tipo | Responsabilidad |
 | --- | --- | --- | --- |
-| Scouting - Origen | `origen-scouting.definition.json` | Específico; recurrencia cada 5 min, concurrencia 1 | `sp_tomar_lote` vía gateway → traduce cada fila al contrato **Trabajo** → llama al Planificador → por cada resultado: `sp_guardar_informe` (si hay respuesta del agente) y `sp_registrar_resultado`; si se agotaron los intentos, aviso de falla vía Comunicaciones |
+| Scouting - Origen | `origen-scouting.definition.json` | Específico; recurrencia cada 5 min, concurrencia 1 | `POST /api/flujo/lote` → traduce cada ejecución al contrato **Trabajo** → llama al Planificador → por cada resultado: `PUT …/informe` (si hay respuesta del agente) y `POST …/resultado`; si se agotaron los intentos, aviso de falla vía Comunicaciones |
 | Planificador | `planificador.definition.json` | Genérico; flujo hijo | Recibe `loteJson` (lista de Trabajos), ejecuta cada uno con InstructionBuilder (5 en paralelo), aísla fallas y devuelve `resultadosJson` |
 | InstructionBuilder | `instruction-builder.definition.json` | Genérico; flujo hijo | Recibe `trabajoJson`; convierte el prompt en un prompt institucional (plantilla del origen + perfil institucional de la variable de entorno + políticas + variables), llama al agente si no hay `resultadoPrevio`, separa el resumen (`===RESUMEN===`), pide el envío a Comunicaciones y devuelve `resultadoJson` |
 | Comunicaciones | `comunicaciones.definition.json` | Genérico; flujo hijo | Recibe `mensajeJson`; arma el HTML según la plantilla (`informe`, `aviso-falla`, `texto`) y envía por el canal (hoy `correo`, con Outlook); devuelve `resultadoJson` |
@@ -12,7 +12,7 @@ La integración se arma con un **origen específico** de Scouting y **tres compo
 ```
 Scouting - Origen ──trabajos──▶ Planificador ──un trabajo──▶ InstructionBuilder ──instrucción──▶ Agente Scouting (Copilot Studio)
        ▲   │                         │                              └──mensaje──▶ Comunicaciones ──▶ Outlook
-       │   └──procedimientos──▶ SQL Server
+       │   └──HTTPS /api/flujo──▶ Backoffice Java ──▶ SQL Server
        └────────resultados───────────┘
 ```
 
@@ -33,8 +33,8 @@ Los flujos hijo solo reciben y devuelven texto, número o sí/no, así que cada 
 ## Reglas de diseño
 
 1. **Nadie falla hacia arriba**: cada componente responde siempre un Resultado con `ok` y `etapa` (`completo`, `instruccion`, `agente`, `comunicacion`, `planificador`). Un trabajo con error no corta el lote.
-2. **`metadata` es opaco**: los componentes genéricos lo devuelven tal cual; solo el origen lo interpreta (`ejecucionId`, `exploracionId`, `creadorEmail`, `titulo`).
-3. **Reintentos**: los diferidos (15/60 min, máx. 3) y la desactivación siguen en el origen y la cola SQL. El Planificador solo reintenta de inmediato fallas de transporte de la llamada al flujo hijo.
+2. **`metadata` es opaco**: los componentes genéricos lo devuelven tal cual; solo el origen lo interpreta (`ejecucionId`, `exploracionId`, `intentos`, `creadorEmail`, `titulo`).
+3. **Reintentos**: los diferidos (15/60 min, máx. 3) y la desactivación siguen en la cola del backoffice (procedimientos SQL detrás de la API). El Planificador solo reintenta de inmediato fallas de transporte de la llamada al flujo hijo.
 4. **Créditos**: InstructionBuilder devuelve la respuesta del agente aunque falle el envío; el origen la guarda y en el reintento la manda en `resultadoPrevio` para no volver a llamar al agente.
 5. **Agentes**: el conector de Copilot Studio fija el agente en diseño, así que InstructionBuilder elige con un `Switch` por `agente`. Sumar un agente = agregar un caso con su acción "Ejecutar un agente y esperar".
 6. **Prompt institucional en dos capas**: InstructionBuilder convierte el prompt del usuario en un prompt institucional sin depender de SQL ni del origen (ver la sección siguiente).
@@ -54,20 +54,27 @@ Por qué una variable de entorno: las reglas institucionales son del componente,
 
 Reparto con el agente de Copilot Studio: las instrucciones fijas del agente cubren su rol y capacidades; los perfiles cubren lo institucional que puede variar por tipo de encargo o por agente que reutiliza el componente.
 
-## Conexiones (referencias de conexión de la solución)
+## Conexiones y variables de entorno de la solución
 
-| Referencia | Conector | Usada por | Cuenta |
+| Elemento | Tipo | Usado por | Valor |
 | --- | --- | --- | --- |
-| Scouting SQL | SQL Server (gateway) | Origen | Login SQL `scouting_flujo` |
-| Scouting Copilot | Microsoft Copilot Studio | InstructionBuilder | Cuenta de servicio |
-| Scouting Outlook | Office 365 Outlook | Comunicaciones | Cuenta de servicio con buzón |
+| HTTP | Acción integrada (Premium), sin conexión | Origen | — |
+| `ucu_ScoutingApiUrl` | Variable de entorno (texto) | Origen | URL base del backoffice, sin barra final. En la PC: la URL del túnel (ver README del repositorio) |
+| `ucu_ScoutingApiClave` | Variable de entorno (texto en Desarrollo; **Secreto** con Azure Key Vault en Producción) | Origen | Igual a `scouting.api.clave` del backoffice |
+| `ucu_InstruccionesInstitucionales` | Variable de entorno (JSON) | InstructionBuilder | Perfiles institucionales |
+| Scouting Copilot | Referencia de conexión: Microsoft Copilot Studio | InstructionBuilder | Cuenta de servicio |
+| Scouting Outlook | Referencia de conexión: Office 365 Outlook | Comunicaciones | Cuenta de servicio con buzón |
 
-Requiere que la política DLP del entorno permita **SQL Server**, **Microsoft Copilot Studio** y **Office 365 Outlook** en el mismo grupo de datos, y un gateway registrado en la región del entorno (Brazil South para el entorno actual).
+Las acciones HTTP del Origen tienen **entradas seguras**, para que la clave no quede en el historial de ejecuciones.
 
-## Contrato con SQL Server (solo lo usa el origen)
+Requiere que la política DLP del entorno (y las directivas avanzadas de conectores, si el entorno es administrado) permita **HTTP**, **Microsoft Copilot Studio** y **Office 365 Outlook** en el mismo grupo de datos. Ya no hace falta gateway ni el conector SQL Server.
 
-`sp_tomar_lote(@lote int, @instancia nvarchar)` devuelve una fila por ejecución tomada: `ejecucion_id`, `modo` (0 Programada, 1 Prueba, 2 Manual), `intentos`, `exploracion_id`, `titulo`, `prompt`, `informe` (respuesta de un intento anterior), `creador_email`, `creador_nombre`, `participantes` (correos separados por `;`, ya cortados al tope) y `pie_correo`.
+## Contrato con el backoffice (solo lo usa el origen)
 
-`sp_guardar_informe(@ejecucion_id, @informe)` guarda la respuesta del agente.
+Todas las llamadas llevan el encabezado `X-Scouting-Clave`. Sin clave o con una clave distinta, la API responde 401.
 
-`sp_registrar_resultado(@ejecucion_id, @ok, @destinatarios, @resumen, @error)` devuelve `estado`, `notificar`, `desactivada`, `titulo`, `creador_email`, `creador_nombre`, `correo_alertas_ti`.
+`POST /api/flujo/lote` con `{"lote": 10, "instancia": "<id de la corrida>"}` devuelve `{"ejecuciones": [...]}`, una por ejecución tomada: `ejecucionId`, `modo` (`programada`, `prueba`, `manual`), `intentos`, `exploracionId`, `titulo`, `prompt`, `informe` (respuesta de un intento anterior), `creadorEmail`, `creadorNombre`, `participantes` (lista, ya cortada al tope) y `pieCorreo`. Envuelve `sp_tomar_lote`: encola las vencidas y bloquea lo tomado 30 min.
+
+`PUT /api/flujo/ejecuciones/{id}/informe` con `{"informe": "..."}` guarda la respuesta del agente (`sp_guardar_informe`). Responde 204, o 404 si la ejecución no existe.
+
+`POST /api/flujo/ejecuciones/{id}/resultado` con `{"ok": true|false, "destinatarios": n, "resumen": "...", "error": "..."}` (`sp_registrar_resultado`) devuelve `estado` (`enviado`, `reintentar`, `fallido`), `notificar`, `desactivada`, `titulo`, `creadorEmail`, `creadorNombre` y `correoAlertasTi` (lista).

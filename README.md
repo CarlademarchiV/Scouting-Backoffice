@@ -5,20 +5,23 @@ Backoffice de UCU para que cada persona configure sus exploraciones de scouting:
 - **App**: Java 21, Spring Boot 3.5, Thymeleaf, Bootstrap 5.
 - **Base**: SQL Server en la red de UCU (esquema `scouting`, migraciones Flyway).
 - **Login**: Entra ID (OIDC). Los permisos se dan con grupos propios de la app.
-- **Proceso**: Power Automate + Copilot Studio. Un flujo de origen de Scouting (único que conoce SQL, vía gateway) y tres componentes reutilizables: Planificador, InstructionBuilder y Comunicaciones. Ver [power-automate/README.md](power-automate/README.md).
+- **Proceso**: Power Automate + Copilot Studio. Un flujo de origen de Scouting, que toma la cola llamando a la API `/api/flujo` del backoffice (HTTPS con clave en encabezado, sin gateway), y tres componentes reutilizables: Planificador, InstructionBuilder y Comunicaciones. Ver [power-automate/README.md](power-automate/README.md).
 - **Diseño técnico**: [docs/diseno-tecnico.md](docs/diseno-tecnico.md).
 
 ```
-Usuarios ──HTTPS──> Backoffice Java ──JDBC──> SQL Server <──gateway── Power Automate ──> Copilot Studio
-                                                                          └──> Outlook (cuenta de servicio)
+Usuarios ───────HTTPS──> Backoffice Java ──JDBC──> SQL Server
+Power Automate ─HTTPS──> /api/flujo (X-Scouting-Clave)
+      ├──> Copilot Studio (agente Scouting)
+      └──> Outlook (cuenta de servicio)
 ```
 
 ## Estructura
 
 ```
 src/main/java/uy/edu/ucu/scouting
-  config/       Seguridad (OIDC) y propiedades
-  security/     Alta del usuario al ingresar y cálculo de roles
+  api/          API REST que consume Power Automate (/api/flujo)
+  config/       Seguridad (OIDC, API) y propiedades
+  security/     Alta del usuario al ingresar, cálculo de roles y clave de la API
   domain/       Entidades JPA y enumeraciones
   repository/   Spring Data
   service/      Reglas de negocio (topes, validaciones, cola de ejecuciones)
@@ -94,6 +97,16 @@ mvn spring-boot:run "-Dspring-boot.run.profiles=local,dev"
 
 Se entra en http://localhost:8080 con el correo institucional (si está en `admins-iniciales`, como administrador). Este modo nunca debe activarse en servidores.
 
+**Probar la API desde Power Automate con la app en la PC:** Power Automate corre en la nube y no ve `localhost`. Para una prueba se puede abrir un túnel temporal, por ejemplo con Microsoft Dev Tunnels:
+
+```powershell
+winget install Microsoft.devtunnel
+devtunnel user login
+devtunnel host -p 8080 --allow-anonymous
+```
+
+Usar la URL `https://…devtunnels.ms` que muestra como base de la API en el flujo, con la clave de `api.clave` en `X-Scouting-Clave`. Con el login de desarrollo, las pantallas solo responden desde la propia PC, así que por el túnel solo queda accesible la API. Cerrar el túnel (Ctrl+C) al terminar.
+
 Para apagar la base: `docker stop scouting-sql` (y `docker start scouting-sql` para volver a usarla).
 
 ## Pruebas
@@ -104,14 +117,16 @@ mvn verify
 
 - `CorreosTest`: parseo y validación de listas de correos.
 - `ProximaEjecucionIT`: cálculo de la próxima ejecución en hora de Montevideo para cada frecuencia.
-- `ColaEjecucionesIT`: contrato de los procedimientos que usan los flujos (toma del lote, tope de participantes, éxito, reintentos y falla).
+- `ColaEjecucionesIT`: contrato de los procedimientos de la cola (toma del lote, tope de participantes, éxito, reintentos y falla).
+- `FlujoApiIT`: API `/api/flujo` (clave en encabezado, ciclo lote → informe → resultado, reintento y 404).
 - `ScoutingApplicationIT`: arranque completo y reglas de acceso.
+- `DevLoginIT`: login de desarrollo (solo desde la propia PC).
 
 Las pruebas de integración levantan SQL Server con Testcontainers (requiere Docker). GitHub Actions las corre en cada push y PR.
 
 ## Despliegue en servidores de UCU
 
-1. **Base**: el DBA crea las bases `ScoutingTest` y `Scouting`, los logins `scouting_app`, `scouting_flujo` y `scouting_deploy` y aplica `db/permisos.sql` (la parte de `scouting_deploy` antes de la primera migración; los roles de la app y del flujo después).
+1. **Base**: el DBA crea las bases `ScoutingTest` y `Scouting`, los logins `scouting_app` y `scouting_deploy` y aplica `db/permisos.sql` (la parte de `scouting_deploy` antes de la primera migración; el rol de la app después). El login `scouting_flujo` ya no hace falta: Power Automate entra por la API.
 2. **Migraciones**: en cada versión, correr una vez con Flyway activo y el login de despliegue:
 
    ```bash
@@ -121,13 +136,13 @@ Las pruebas de integración levantan SQL Server con Testcontainers (requiere Doc
 
    (Arranca, aplica las migraciones pendientes y termina. Alternativa: Flyway CLI sobre `src/main/resources/db/migration`.)
 
-3. **App**: ejecutar el JAR como servicio con su `config/scouting.yml` al lado (o `SCOUTING_CONFIG=<ruta>`), con `db.usuario: scouting_app`, `db.migrar: false`, los datos del registro de Entra de producción y `log.archivo` en la carpeta de logs del servidor.
+3. **App**: ejecutar el JAR como servicio con su `config/scouting.yml` al lado (o `SCOUTING_CONFIG=<ruta>`), con `db.usuario: scouting_app`, `db.migrar: false`, los datos del registro de Entra de producción, `api.clave` (distinta por ambiente) y `log.archivo` en la carpeta de logs del servidor.
 
-4. **Proxy**: publicar por HTTPS (por ejemplo `https://scouting.ucu.edu.uy`) reenviando los encabezados `X-Forwarded-*`. La redirect URI de Entra es `https://<host>/login/oauth2/code/entra`.
+4. **Proxy**: publicar por HTTPS (por ejemplo `https://scouting.ucu.edu.uy`) reenviando los encabezados `X-Forwarded-*`. La redirect URI de Entra es `https://<host>/login/oauth2/code/entra`. Desde internet alcanza con exponer `/api/flujo/**` (lo llama Power Automate desde la nube de Microsoft); las pantallas pueden quedar solo en la red de UCU. Si el firewall lo permite, limitar `/api/flujo/**` a los rangos IP de Power Platform de la región del entorno.
 5. **Monitoreo**: `GET /actuator/health`.
 
 ## Notas
 
 - Los roles se calculan al iniciar sesión: un cambio de grupo rige desde el próximo ingreso de la persona.
 - Fechas en UTC en la base; la app y los procedimientos las convierten a hora de Montevideo.
-- Los flujos no llaman a la app: toda la integración pasa por la tabla `ejecucion` y tres procedimientos.
+- Power Automate se integra solo por la API `/api/flujo` (tres operaciones que envuelven los procedimientos de la cola). No necesita gateway ni login de base de datos.

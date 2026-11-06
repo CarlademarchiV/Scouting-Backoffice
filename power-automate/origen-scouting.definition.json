@@ -1,15 +1,27 @@
 {
   "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
   "contentVersion": "1.0.0.0",
-  "description": "Scouting - Origen (específico de Scouting). Único flujo que conoce SQL Server: toma el lote con sp_tomar_lote vía gateway, lo traduce al contrato Trabajo, llama al Planificador y registra cada resultado (sp_guardar_informe, sp_registrar_resultado). Si se agotaron los intentos, pide a Comunicaciones el aviso de falla.",
+  "description": "Scouting - Origen (específico de Scouting). Único flujo que conoce la cola de Scouting: la toma con la API del backoffice (POST /api/flujo/lote, encabezado X-Scouting-Clave; sin gateway), la traduce al contrato Trabajo, llama al Planificador y registra cada resultado (PUT /api/flujo/ejecuciones/{id}/informe, POST /api/flujo/ejecuciones/{id}/resultado). Si se agotaron los intentos, pide a Comunicaciones el aviso de falla.",
   "parameters": {
     "$connections": {
       "defaultValue": {},
       "type": "Object"
     },
-    "$authentication": {
-      "defaultValue": {},
-      "type": "SecureObject"
+    "ucu_ScoutingApiUrl (ucu_ScoutingApiUrl)": {
+      "defaultValue": "https://scouting.ucu.edu.uy",
+      "type": "String",
+      "metadata": {
+        "schemaName": "ucu_ScoutingApiUrl",
+        "description": "URL base del backoffice, sin barra final (en la PC: la URL del túnel)."
+      }
+    },
+    "ucu_ScoutingApiClave (ucu_ScoutingApiClave)": {
+      "defaultValue": "",
+      "type": "String",
+      "metadata": {
+        "schemaName": "ucu_ScoutingApiClave",
+        "description": "Clave de la API (scouting.api.clave). En Producción: variable de entorno de tipo Secreto (Azure Key Vault)."
+      }
     }
   },
   "triggers": {
@@ -28,34 +40,39 @@
   },
   "actions": {
     "Tomar_lote": {
-      "type": "OpenApiConnection",
+      "type": "Http",
       "inputs": {
-        "host": {
-          "connectionName": "shared_sql",
-          "operationId": "ExecuteProcedure_V2",
-          "apiId": "/providers/Microsoft.PowerApps/apis/shared_sql"
+        "method": "POST",
+        "uri": "@{parameters('ucu_ScoutingApiUrl (ucu_ScoutingApiUrl)')}/api/flujo/lote",
+        "headers": {
+          "Content-Type": "application/json",
+          "X-Scouting-Clave": "@parameters('ucu_ScoutingApiClave (ucu_ScoutingApiClave)')"
         },
-        "parameters": {
-          "server": "default",
-          "database": "default",
-          "procedure": "[scouting].[sp_tomar_lote]",
-          "parameters/lote": 10,
-          "parameters/instancia": "@{workflow()?['run']?['name']}"
-        },
-        "authentication": "@parameters('$authentication')"
+        "body": {
+          "lote": 10,
+          "instancia": "@{workflow()?['run']?['name']}"
+        }
       },
       "retryPolicy": {
-        "type": "exponential",
-        "count": 4,
+        "type": "fixed",
+        "count": 2,
         "interval": "PT30S"
       },
-      "runAfter": {}
+      "runtimeConfiguration": {
+        "secureData": {
+          "properties": [
+            "inputs"
+          ]
+        }
+      },
+      "runAfter": {},
+      "description": "Toma con bloqueo de 30 min. Si se pierde la respuesta, las ejecuciones se vuelven a tomar al vencer el bloqueo."
     },
     "Hay_trabajos": {
       "type": "If",
       "expression": {
         "greater": [
-          "@length(coalesce(outputs('Tomar_lote')?['body/resultsets/Table1'],createArray()))",
+          "@length(coalesce(body('Tomar_lote')?['ejecuciones'],createArray()))",
           0
         ]
       },
@@ -68,11 +85,11 @@
         "A_contrato_Trabajo": {
           "type": "Select",
           "inputs": {
-            "from": "@outputs('Tomar_lote')?['body/resultsets/Table1']",
+            "from": "@body('Tomar_lote')?['ejecuciones']",
             "select": {
-              "id": "@string(item()?['ejecucion_id'])",
+              "id": "@string(item()?['ejecucionId'])",
               "agente": "Scouting",
-              "modo": "@if(equals(item()?['modo'],1),'prueba',if(equals(item()?['modo'],2),'manual','programada'))",
+              "modo": "@item()?['modo']",
               "instruccion": {
                 "prompt": "@item()?['prompt']",
                 "plantilla": "",
@@ -89,23 +106,23 @@
               "comunicacion": {
                 "canal": "correo",
                 "para": [
-                  "@item()?['creador_email']"
+                  "@item()?['creadorEmail']"
                 ],
-                "cco": "@if(equals(item()?['modo'],1),createArray(),split(coalesce(item()?['participantes'],''),';'))",
-                "responderA": "@item()?['creador_email']",
-                "asunto": "@concat('[Scouting',if(equals(item()?['modo'],1),' - PRUEBA',''),'] ',item()?['titulo'])",
+                "cco": "@if(equals(item()?['modo'],'prueba'),createArray(),coalesce(item()?['participantes'],createArray()))",
+                "responderA": "@item()?['creadorEmail']",
+                "asunto": "@concat('[Scouting',if(equals(item()?['modo'],'prueba'),' - PRUEBA',''),'] ',item()?['titulo'])",
                 "plantilla": "informe",
-                "banner": "@if(equals(item()?['modo'],1),'PRUEBA: este correo solo te llegó a vos.','')",
-                "pie": "@coalesce(item()?['pie_correo'],'')",
+                "banner": "@if(equals(item()?['modo'],'prueba'),'PRUEBA: este correo solo te llegó a vos.','')",
+                "pie": "@coalesce(item()?['pieCorreo'],'')",
                 "contenido": {
                   "titulo": "@item()?['titulo']"
                 }
               },
               "metadata": {
-                "ejecucionId": "@item()?['ejecucion_id']",
-                "exploracionId": "@item()?['exploracion_id']",
+                "ejecucionId": "@item()?['ejecucionId']",
+                "exploracionId": "@item()?['exploracionId']",
                 "intentos": "@item()?['intentos']",
-                "creadorEmail": "@item()?['creador_email']",
+                "creadorEmail": "@item()?['creadorEmail']",
                 "titulo": "@item()?['titulo']"
               }
             }
@@ -163,26 +180,29 @@
               "runAfter": {},
               "actions": {
                 "Guardar_informe": {
-                  "type": "OpenApiConnection",
+                  "type": "Http",
                   "inputs": {
-                    "host": {
-                      "connectionName": "shared_sql",
-                      "operationId": "ExecuteProcedure_V2",
-                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_sql"
+                    "method": "PUT",
+                    "uri": "@{parameters('ucu_ScoutingApiUrl (ucu_ScoutingApiUrl)')}/api/flujo/ejecuciones/@{items('Por_cada_resultado')?['metadata']?['ejecucionId']}/informe",
+                    "headers": {
+                      "Content-Type": "application/json",
+                      "X-Scouting-Clave": "@parameters('ucu_ScoutingApiClave (ucu_ScoutingApiClave)')"
                     },
-                    "parameters": {
-                      "server": "default",
-                      "database": "default",
-                      "procedure": "[scouting].[sp_guardar_informe]",
-                      "parameters/ejecucion_id": "@items('Por_cada_resultado')?['metadata']?['ejecucionId']",
-                      "parameters/informe": "@items('Por_cada_resultado')?['respuesta']"
-                    },
-                    "authentication": "@parameters('$authentication')"
+                    "body": {
+                      "informe": "@items('Por_cada_resultado')?['respuesta']"
+                    }
                   },
                   "retryPolicy": {
                     "type": "exponential",
                     "count": 4,
                     "interval": "PT30S"
+                  },
+                  "runtimeConfiguration": {
+                    "secureData": {
+                      "properties": [
+                        "inputs"
+                      ]
+                    }
                   },
                   "runAfter": {}
                 }
@@ -192,29 +212,32 @@
               }
             },
             "Registrar_resultado": {
-              "type": "OpenApiConnection",
+              "type": "Http",
               "inputs": {
-                "host": {
-                  "connectionName": "shared_sql",
-                  "operationId": "ExecuteProcedure_V2",
-                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_sql"
+                "method": "POST",
+                "uri": "@{parameters('ucu_ScoutingApiUrl (ucu_ScoutingApiUrl)')}/api/flujo/ejecuciones/@{items('Por_cada_resultado')?['metadata']?['ejecucionId']}/resultado",
+                "headers": {
+                  "Content-Type": "application/json",
+                  "X-Scouting-Clave": "@parameters('ucu_ScoutingApiClave (ucu_ScoutingApiClave)')"
                 },
-                "parameters": {
-                  "server": "default",
-                  "database": "default",
-                  "procedure": "[scouting].[sp_registrar_resultado]",
-                  "parameters/ejecucion_id": "@items('Por_cada_resultado')?['metadata']?['ejecucionId']",
-                  "parameters/ok": "@items('Por_cada_resultado')?['ok']",
-                  "parameters/destinatarios": "@items('Por_cada_resultado')?['destinatarios']",
-                  "parameters/resumen": "@items('Por_cada_resultado')?['resumen']",
-                  "parameters/error": "@if(items('Por_cada_resultado')?['ok'],null,concat(items('Por_cada_resultado')?['etapa'],': ',items('Por_cada_resultado')?['error']))"
-                },
-                "authentication": "@parameters('$authentication')"
+                "body": {
+                  "ok": "@items('Por_cada_resultado')?['ok']",
+                  "destinatarios": "@items('Por_cada_resultado')?['destinatarios']",
+                  "resumen": "@items('Por_cada_resultado')?['resumen']",
+                  "error": "@if(items('Por_cada_resultado')?['ok'],null,concat(items('Por_cada_resultado')?['etapa'],': ',items('Por_cada_resultado')?['error']))"
+                }
               },
               "retryPolicy": {
                 "type": "exponential",
                 "count": 4,
                 "interval": "PT30S"
+              },
+              "runtimeConfiguration": {
+                "secureData": {
+                  "properties": [
+                    "inputs"
+                  ]
+                }
               },
               "runAfter": {
                 "Hay_respuesta": [
@@ -226,7 +249,7 @@
               "type": "If",
               "expression": {
                 "equals": [
-                  "@first(outputs('Registrar_resultado')?['body/resultsets/Table1'])?['notificar']",
+                  "@body('Registrar_resultado')?['notificar']",
                   true
                 ]
               },
@@ -245,11 +268,11 @@
                     "para": [
                       "@items('Por_cada_resultado')?['metadata']?['creadorEmail']"
                     ],
-                    "cc": "@if(empty(first(outputs('Registrar_resultado')?['body/resultsets/Table1'])?['correo_alertas_ti']),createArray(),createArray(first(outputs('Registrar_resultado')?['body/resultsets/Table1'])?['correo_alertas_ti']))",
+                    "cc": "@coalesce(body('Registrar_resultado')?['correoAlertasTi'],createArray())",
                     "asunto": "@concat('[Scouting] No se pudo generar: ',items('Por_cada_resultado')?['metadata']?['titulo'])",
                     "contenido": {
                       "titulo": "@concat('La exploración ',items('Por_cada_resultado')?['metadata']?['titulo'],' falló después de todos los reintentos.')",
-                      "cuerpo": "@concat('Etapa: ',items('Por_cada_resultado')?['etapa'],decodeUriComponent('%0A'),'Error: ',items('Por_cada_resultado')?['error'],decodeUriComponent('%0A%0A'),if(equals(first(outputs('Registrar_resultado')?['body/resultsets/Table1'])?['desactivada'],true),'La exploración quedó desactivada por fallas seguidas. Revisala y reactivala desde el backoffice.','Se volverá a intentar en la próxima ejecución programada.'))"
+                      "cuerpo": "@concat('Etapa: ',items('Por_cada_resultado')?['etapa'],decodeUriComponent('%0A'),'Error: ',items('Por_cada_resultado')?['error'],decodeUriComponent('%0A%0A'),if(equals(body('Registrar_resultado')?['desactivada'],true),'La exploración quedó desactivada por fallas seguidas. Revisala y reactivala desde el backoffice.','Se volverá a intentar en la próxima ejecución programada.'))"
                     }
                   }
                 },

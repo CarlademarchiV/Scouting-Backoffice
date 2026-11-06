@@ -174,13 +174,14 @@
           },
           "default": {
             "actions": {
-              "Canal_no_soportado": {
-                "type": "Terminate",
+              "Error_canal": {
+                "type": "SetVariable",
                 "inputs": {
-                  "runStatus": "Failed",
-                  "runError": {
-                    "code": "CanalNoSoportado",
-                    "message": "@concat('Canal no soportado: ',outputs('Mensaje')?['canal'])"
+                  "name": "resultado",
+                  "value": {
+                    "ok": false,
+                    "destinatarios": 0,
+                    "error": "@{concat('Canal no soportado: ',coalesce(outputs('Mensaje')?['canal'],''))}"
                   }
                 },
                 "runAfter": {}

@@ -23,6 +23,14 @@ scouting:
     client-id: "00000000-0000-0000-0000-000000000000"   # Id. de aplicación (cliente)
     client-secret: "pegar-aqui-el-valor-del-secreto"     # SECRETO - el "Valor", no el "Id. de secreto"
 
+  # --- API para Power Automate (/api/flujo) ---------------------------------
+  # Clave compartida que Power Automate manda en el encabezado X-Scouting-Clave.
+  # Generarla larga y al azar (mínimo 32 caracteres), por ejemplo en PowerShell:
+  #   $b = New-Object byte[] 36; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b)
+  # Vacía = la API rechaza todas las llamadas.
+  api:
+    clave: ""                         # SECRETO
+
   # --- Acceso ------------------------------------------------------------------
   # Correos institucionales con rol administrador aunque no estén en un grupo admin (para el arranque).
   admins-iniciales: tu.usuario@ucu.edu.uy
